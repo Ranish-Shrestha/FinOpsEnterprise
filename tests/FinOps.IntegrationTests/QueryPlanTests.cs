@@ -93,8 +93,11 @@ public sealed partial class QueryPlanTests(SqlServerFixture fixture, ITestOutput
             var none = results.Single(r => r.Scenario == name && r.Variant == NoIndexes);
             Assert.Contains("IX_ExpenseRequests_Reporting", after.PlanOperators);
             Assert.DoesNotContain("Clustered Index Scan", after.PlanOperators);
-            Assert.True(after.LogicalReads * 3 < none.LogicalReads,
-                $"{name}: expected at least 3x fewer reads ({after.LogicalReads} vs {none.LogicalReads}).");
+            // A one-month report reads a small slice of the index. A whole-year report covers most of the
+            // table, so its gain is only the narrower (covering) index, roughly 3x.
+            var factor = name.Contains("one month") ? 10 : 2;
+            Assert.True(after.LogicalReads * factor < none.LogicalReads,
+                $"{name}: expected at least {factor}x fewer reads ({after.LogicalReads} vs {none.LogicalReads}).");
         }
         await db.Database.EnsureDeletedAsync();
     }

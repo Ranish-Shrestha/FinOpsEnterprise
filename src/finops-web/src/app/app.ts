@@ -5,10 +5,11 @@ import { FoundationService, FoundationState } from './foundation.service';
 import { AuthService } from './auth.service';
 import { Budgets } from './budgets/budgets';
 import { Expenses } from './expenses/expenses';
+import { Reports } from './reports/reports';
 
 @Component({
   selector: 'app-root',
-  imports: [Expenses, Budgets],
+  imports: [Expenses, Budgets, Reports],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })

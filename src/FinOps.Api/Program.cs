@@ -97,6 +97,7 @@ api.MapGet("/departments", async (CurrentUserAccess access, IDepartmentReader re
 
 api.MapExpenseEndpoints();
 api.MapBudgetEndpoints();
+api.MapReportEndpoints();
 
 app.Run();
 return 0;

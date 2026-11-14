@@ -21,7 +21,7 @@ export class BudgetsService {
   report(year: number, month?: number): Observable<BudgetVsActualRow[]> {
     let params = new HttpParams().set('year', year);
     if (month) params = params.set('month', month);
-    return this.http.get<BudgetVsActualRow[]>('/api/reports/budget-vs-actual', { params });
+    return this.http.get<BudgetVsActualRow[]>('/api/budgets/vs-actual', { params });
   }
 
   list(year: number): Observable<Budget[]> {

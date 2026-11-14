@@ -3,6 +3,8 @@
     <ProjectReference Include="../FinOps.Application/FinOps.Application.csproj" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+    <PackageReference Include="QuestPDF" />
+    <PackageReference Include="ClosedXML" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>

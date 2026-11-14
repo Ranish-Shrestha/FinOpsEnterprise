@@ -3,6 +3,8 @@ using FinOps.Application.Departments;
 using FinOps.Application.Expenses;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using FinOps.Application.Identity;
+using FinOps.Application.Reports;
+using FinOps.Infrastructure.Reporting;
 using FinOps.Infrastructure.Health;
 using FinOps.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -35,6 +37,11 @@ public static class DependencyInjection
         services.AddScoped<IBudgetStore, BudgetStore>();
         services.AddScoped<IBudgetReader, BudgetReader>();
         services.AddScoped<BudgetService>();
+        services.AddScoped<IReportReader, ReportReader>();
+        services.AddScoped<IAuditWriter, AuditWriter>();
+        services.AddSingleton<IReportRenderer, PdfReportRenderer>();
+        services.AddSingleton<IReportRenderer, ExcelReportRenderer>();
+        services.AddScoped<ReportService>();
         services.TryAddSingleton(TimeProvider.System);
         services.AddHealthChecks().AddCheck<DatabaseHealthCheck>(
             "database", tags: ["ready"], timeout: TimeSpan.FromSeconds(15));

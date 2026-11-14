@@ -1,0 +1,96 @@
+@if (catalog().length > 0) {
+  <section class="reports" aria-labelledby="reports-heading">
+    <div><p class="eyebrow">REPORTING</p><h2 id="reports-heading">Reports</h2></div>
+    <p class="panel-description">
+      Preview a report here, or export it as PDF or Excel. Reports include only the departments you are allowed to see,
+      and every export is recorded in the audit trail.
+    </p>
+
+    <ul class="catalog" role="list">
+      @for (entry of catalog(); track entry.key) {
+        <li>
+          <button type="button" class="report-card" [class.current]="selected()?.key === entry.key"
+            [attr.aria-pressed]="selected()?.key === entry.key" (click)="choose(entry)">
+            <strong>{{ entry.title }}</strong>
+            <span>{{ entry.description }}</span>
+          </button>
+        </li>
+      }
+    </ul>
+
+    @if (selected(); as entry) {
+      <form class="report-form" (submit)="$event.preventDefault(); runPreview()" [attr.aria-label]="entry.title + ' parameters'">
+        @if (hasParameter('from')) {
+          <label>From <input type="date" [value]="args().from" (input)="setArg('from', $any($event.target).value)" /></label>
+          <label>To <input type="date" [value]="args().to" (input)="setArg('to', $any($event.target).value)" /></label>
+        }
+        @if (hasParameter('year')) {
+          <label>Year <input type="number" min="2000" max="2100" [value]="args().year" (input)="setArg('year', $any($event.target).value)" /></label>
+          <label>Month
+            <select [value]="args().month" (change)="setArg('month', $any($event.target).value)">
+              <option value="">Whole year</option>
+              @for (m of [1,2,3,4,5,6,7,8,9,10,11,12]; track m) { <option [value]="m">{{ m }}</option> }
+            </select>
+          </label>
+        }
+        @if (entry.parameters.length === 0) { <p class="muted">No parameters: shows everything pending right now.</p> }
+        <div class="actions">
+          <button type="submit" [disabled]="busy()">{{ busy() === 'preview' ? 'Loading...' : 'Preview' }}</button>
+          <button type="button" class="secondary" (click)="download('pdf')" [disabled]="busy()">{{ busy() === 'pdf' ? 'Preparing...' : 'PDF' }}</button>
+          <button type="button" class="secondary" (click)="download('xlsx')" [disabled]="busy()">{{ busy() === 'xlsx' ? 'Preparing...' : 'Excel' }}</button>
+        </div>
+      </form>
+
+      @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+
+      @if (preview(); as table) {
+        <div class="preview" aria-live="polite">
+          <p class="meta">
+            @for (p of table.parameters; track p.label) { <span>{{ p.label }}: {{ p.value }}</span> }
+            <span>Scope: {{ table.scope }}</span>
+            <span>{{ table.rows.length }} row(s)</span>
+          </p>
+          @if (table.rows.length === 0) {
+            <p class="empty-state">No data for the selected parameters.</p>
+          } @else {
+            <div class="table-wrap">
+              <table>
+                <caption class="visually-hidden">{{ table.title }}</caption>
+                <thead><tr>
+                  @for (c of table.columns; track c.key) { <th scope="col" [class.num]="isNumeric(c)">{{ c.header }}</th> }
+                </tr></thead>
+                <tbody>
+                  @for (row of table.rows; track $index) {
+                    <tr>
+                      @for (c of table.columns; track c.key) {
+                        <td [class.num]="isNumeric(c)">
+                          @switch (c.kind) {
+                            @case ('Money') { {{ row[c.key] === null ? '—' : ($any(row[c.key]) | currency: 'USD') }} }
+                            @case ('Percent') { {{ row[c.key] === null ? '—' : ($any(row[c.key]) | number: '1.1-1') + '%' }} }
+                            @case ('DateTime') { {{ $any(row[c.key]) | date: 'yyyy-MM-dd HH:mm' : 'UTC' }} }
+                            @default { {{ row[c.key] }} }
+                          }
+                        </td>
+                      }
+                    </tr>
+                  }
+                </tbody>
+                @if (hasTotals(table)) {
+                  <tfoot><tr>
+                    @for (c of table.columns; track c.key; let first = $first) {
+                      <td [class.num]="isNumeric(c)">
+                        @if (c.total) {
+                          @if (c.kind === 'Money') { {{ total(table, c) | currency: 'USD' }} } @else { {{ total(table, c) | number }} }
+                        } @else if (first) { Total }
+                      </td>
+                    }
+                  </tr></tfoot>
+                }
+              </table>
+            </div>
+          }
+        </div>
+      }
+    }
+  </section>
+}

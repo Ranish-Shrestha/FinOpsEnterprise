@@ -18,12 +18,14 @@ public static class ApplicationPermissions
     public const string BudgetsReadDepartment = "budgets.read.department";
     public const string BudgetsReadAll = "budgets.read.all";
     public const string BudgetsManage = "budgets.manage";
+    public const string ReportsReadDepartment = "reports.read.department";
+    public const string ReportsReadAll = "reports.read.all";
 
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
         DepartmentsRead, DepartmentsReadAll, UserRolesManage,
         ExpensesCreate, ExpensesReadDepartment, ExpensesReadAll, ExpensesApprove, ExpensesPost, AuditRead,
-        BudgetsReadDepartment, BudgetsReadAll, BudgetsManage
+        BudgetsReadDepartment, BudgetsReadAll, BudgetsManage, ReportsReadDepartment, ReportsReadAll
     };
 
     public static bool Has(this CurrentUserDto user, string permission) =>

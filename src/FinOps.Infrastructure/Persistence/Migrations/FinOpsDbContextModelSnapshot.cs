@@ -235,7 +235,13 @@ namespace FinOps.Infrastructure.Persistence.Migrations
                     b.HasIndex("ExpenseDate")
                         .HasDatabaseName("IX_ExpenseRequests_Reporting");
 
-                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("ExpenseDate"), new[] { "DepartmentId", "Status", "Amount", "Currency" });
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("ExpenseDate"), new[] { "DepartmentId", "Status", "Amount", "Currency", "Category" });
+
+                    b.HasIndex("PostedAtUtc")
+                        .HasDatabaseName("IX_ExpenseRequests_Ledger")
+                        .HasFilter("[Status] = 'Posted'");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("PostedAtUtc"), new[] { "DepartmentId" });
 
                     b.HasIndex("PostedById");
 
@@ -369,6 +375,16 @@ namespace FinOps.Infrastructure.Persistence.Migrations
                         {
                             Id = new Guid("40000000-0000-0000-0000-00000000000c"),
                             Name = "budgets.manage"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-00000000000d"),
+                            Name = "reports.read.department"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-00000000000e"),
+                            Name = "reports.read.all"
                         });
                 });
 
@@ -464,6 +480,11 @@ namespace FinOps.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            RoleId = new Guid("30000000-0000-0000-0000-000000000002"),
+                            PermissionId = new Guid("40000000-0000-0000-0000-00000000000d")
+                        },
+                        new
+                        {
                             RoleId = new Guid("30000000-0000-0000-0000-000000000004"),
                             PermissionId = new Guid("40000000-0000-0000-0000-000000000001")
                         },
@@ -499,6 +520,11 @@ namespace FinOps.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            RoleId = new Guid("30000000-0000-0000-0000-000000000004"),
+                            PermissionId = new Guid("40000000-0000-0000-0000-00000000000e")
+                        },
+                        new
+                        {
                             RoleId = new Guid("30000000-0000-0000-0000-000000000003"),
                             PermissionId = new Guid("40000000-0000-0000-0000-000000000001")
                         },
@@ -526,6 +552,11 @@ namespace FinOps.Infrastructure.Persistence.Migrations
                         {
                             RoleId = new Guid("30000000-0000-0000-0000-000000000003"),
                             PermissionId = new Guid("40000000-0000-0000-0000-00000000000b")
+                        },
+                        new
+                        {
+                            RoleId = new Guid("30000000-0000-0000-0000-000000000003"),
+                            PermissionId = new Guid("40000000-0000-0000-0000-00000000000e")
                         });
                 });
 

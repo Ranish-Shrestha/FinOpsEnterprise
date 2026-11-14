@@ -13,6 +13,9 @@
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="Testcontainers.MsSql" Version="4.16.0" />
+    <!-- Report rendering. QuestPDF: Community License (free under USD 1M revenue). ClosedXML: MIT. -->
+    <PackageVersion Include="QuestPDF" Version="2026.9.2" />
+    <PackageVersion Include="ClosedXML" Version="0.105.1" />
     <!-- Override SqlClient's older transitive PKCS dependency with the patched .NET 10 version. -->
     <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.14" />
   </ItemGroup>

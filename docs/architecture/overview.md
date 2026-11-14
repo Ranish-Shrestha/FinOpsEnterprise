@@ -72,10 +72,25 @@ sequenceDiagram
 | Rate limiting | Fixed window per caller on `/api/*`, configurable via `RateLimiting:PermitLimit` and `RateLimiting:WindowSeconds` |
 | CI | `.github/workflows/ci.yml`: locked restore, build, unit and HTTP tests, Testcontainers SQL tests, EF drift check, Angular checks, production dependency audit |
 
+## Reporting
+
+```mermaid
+flowchart LR
+  UI["Reports panel"] -- "GET /api/reports/{key}?format=" --> RS["ReportService<br/>permission + server-resolved scope"]
+  RS --> RR["ReportReader"] -- "EXEC usp_* (typed params,<br/>@DepartmentIds JSON)" --> SP[("Stored procedures")]
+  RS --> R{"format"}
+  R -- json --> UI
+  R -- pdf --> PDF["QuestPDF"]
+  R -- xlsx --> XL["ClosedXML"]
+  RS -- "report.exported" --> AU[("audit.AuditEvents")]
+  RDL["reports/SSRS/*.rdl<br/>(optional, same procedures)"] -.-> SP
+```
+
+All three formats come from one `ReportTable`, so preview, PDF and Excel always agree. See [ADR 0004](../decisions/0004-report-access.md).
+
 ## Planned additions
 
 These are not built yet. They are added in their own phases (see [the spec](../../FINOPS_ENTERPRISE_CODEX_SPEC.md)):
 
-- SSRS reporting.
 - Service Bus worker.
 - Azure deployment.

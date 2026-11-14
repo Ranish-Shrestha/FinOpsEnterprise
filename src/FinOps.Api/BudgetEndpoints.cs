@@ -49,14 +49,14 @@ internal static class BudgetEndpoints
             .Produces<BudgetDto>().ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status412PreconditionFailed).ProducesProblem(StatusCodes.Status428PreconditionRequired);
 
-        api.MapGet("/reports/budget-vs-actual", async (int? year, int? month, HttpContext http, CurrentUserAccess access,
+        budgets.MapGet("/vs-actual", async (int? year, int? month, HttpContext http, CurrentUserAccess access,
                 BudgetService service, CancellationToken ct) =>
             {
                 if (await ExpenseEndpoints.ActorAsync(http, access) is not { } actor) return Results.Forbid();
                 return ExpenseEndpoints.ToHttp(http,
                     await service.BudgetVsActualAsync(actor, year ?? DateTime.UtcNow.Year, month, ct));
             })
-            .WithName("BudgetVsActual").WithTags("Reports")
+            .WithName("BudgetVsActual")
             .WithSummary("Budget vs. posted, committed (approved) and pending (submitted) spend per department and month. "
                 + "Runs finance.usp_BudgetVsActual with a server-resolved department scope.")
             .Produces<IReadOnlyList<BudgetVsActualRow>>().ProducesProblem(StatusCodes.Status403Forbidden)

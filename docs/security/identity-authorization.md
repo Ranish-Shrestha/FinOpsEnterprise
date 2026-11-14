@@ -36,10 +36,20 @@ Membership dates use a half-open interval, `[StartsAtUtc, EndsAtUtc)`. Both the 
 | `budgets.read.department` | | Yes | | | Budgets and budget vs. actual for departments where you are an active member |
 | `budgets.read.all` | | | Yes | Yes | Budgets and budget vs. actual for all departments |
 | `budgets.manage` | | | Yes | | Create and change monthly budgets |
+| `reports.read.department` | | Yes | | | Run the four financial reports for departments where you are an active member |
+| `reports.read.all` | | | Yes | Yes | Run the four financial reports for all departments |
 
-**Separation of duties.** Managers approve, finance posts and sets budgets, and administrators manage access and read the audit trail but never approve, post or change money.
+The audit-activity report additionally requires `audit.read` (Administrator only).
 
-**Report scope.** For the budget-vs-actual report, the API resolves the caller's departments and passes them to `finance.usp_BudgetVsActual` as a typed JSON-array parameter. NULL means all departments, and is sent only for `budgets.read.all`. No client-supplied department filter reaches the procedure. The procedure validates its own parameters (THROW 50001 to 50003) in case it is called outside the API. The domain refuses any approval, rejection or posting by the expense's own requester, whatever the caller's permissions.
+**Separation of duties.** Managers approve, finance posts and sets budgets, and administrators manage access and read the audit trail but never approve, post or change money. The domain refuses any approval, rejection or posting by the expense's own requester, whatever the caller's permissions.
+
+**Report and budget scope.** The API resolves the caller's departments from their active memberships and passes them to the reporting stored procedures as a typed JSON-array parameter.
+
+- NULL means all departments, and is sent only for `*.read.all`. An empty array returns nothing.
+- No client-supplied department filter ever reaches a procedure.
+- The procedures validate their own parameters (THROW 50001–50006) in case they are called outside the API.
+- Exports are audited (`report.exported`) and served with `Cache-Control: no-store`.
+- SSRS is never the boundary; see [ADR 0004](../decisions/0004-report-access.md).
 
 **Resource rules for expenses** (in `ExpenseAccessPolicy`, mirrored by the SQL list filter):
 

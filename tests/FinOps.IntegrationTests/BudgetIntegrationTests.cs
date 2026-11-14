@@ -24,43 +24,7 @@ public sealed class BudgetIntegrationTests(SqlServerFixture fixture)
     private HttpClient As(DemoPersona persona) =>
         ApiFactory.CreateHttpsClient(fixture.Factory, persona.EntraObjectId.ToString());
 
-    /// <summary>Creates an isolated department with a known budget and one expense in each relevant state.</summary>
-    private async Task<Guid> IsolatedDepartmentWithSpendAsync(decimal budget = 400m)
-    {
-        return await fixture.WithDbAsync(async db =>
-        {
-            var department = Department.Create($"Budget test {Guid.NewGuid():N}"[..30]);
-            db.Departments.Add(department);
-            db.Budgets.Add(Budget.Create(Guid.NewGuid(), department.Id, Today.Year, Today.Month, budget, "USD", Now));
-
-            ExpenseRequest Expense(decimal amount, DateOnly date)
-            {
-                var e = ExpenseRequest.CreateDraft(Guid.NewGuid(), DemoDataSeeder.Employee.UserId, department.Id, amount,
-                    "USD", ExpenseCategory.Supplies, "Budget test", date, Now);
-                db.ExpenseRequests.Add(e);
-                return e;
-            }
-
-            var posted = Expense(100m, Today);
-            posted.Submit(Now); db.ApprovalDecisions.Add(posted.Approve(DemoDataSeeder.Manager.UserId, null, Now));
-            posted.Post(DemoDataSeeder.FinanceOfficer.UserId, Now);
-
-            var approved = Expense(50m, Today);
-            approved.Submit(Now); db.ApprovalDecisions.Add(approved.Approve(DemoDataSeeder.Manager.UserId, null, Now));
-
-            Expense(25m, Today).Submit(Now);          // pending: shown, not subtracted
-            Expense(999m, Today);                     // draft: excluded
-            Expense(888m, Today).Cancel(Now);         // cancelled: excluded
-
-            var lastMonth = Today.AddMonths(-1);       // other period: excluded from this month
-            var old = Expense(10m, lastMonth);
-            old.Submit(Now); db.ApprovalDecisions.Add(old.Approve(DemoDataSeeder.Manager.UserId, null, Now));
-            old.Post(DemoDataSeeder.FinanceOfficer.UserId, Now);
-
-            await db.SaveChangesAsync();
-            return department.Id;
-        });
-    }
+    private Task<Guid> IsolatedDepartmentWithSpendAsync() => TestData.IsolatedDepartmentWithSpendAsync(fixture);
 
     [Fact]
     public async Task Stored_procedure_computes_budget_vs_actual_exactly()
@@ -68,7 +32,7 @@ public sealed class BudgetIntegrationTests(SqlServerFixture fixture)
         var departmentId = await IsolatedDepartmentWithSpendAsync();
         using var finance = As(DemoDataSeeder.FinanceOfficer);
         var rows = await finance.GetFromJsonAsync<BudgetVsActualRow[]>(
-            $"/api/reports/budget-vs-actual?year={Today.Year}&month={Today.Month}");
+            $"/api/budgets/vs-actual?year={Today.Year}&month={Today.Month}");
 
         var row = Assert.Single(rows!, r => r.DepartmentId == departmentId);
         Assert.Equal(Today.Month, row.Month);
@@ -87,7 +51,7 @@ public sealed class BudgetIntegrationTests(SqlServerFixture fixture)
         using var finance = As(DemoDataSeeder.FinanceOfficer);
         var lastMonth = Today.AddMonths(-1);
         var rows = await finance.GetFromJsonAsync<BudgetVsActualRow[]>(
-            $"/api/reports/budget-vs-actual?year={lastMonth.Year}&month={lastMonth.Month}");
+            $"/api/budgets/vs-actual?year={lastMonth.Year}&month={lastMonth.Month}");
 
         var row = Assert.Single(rows!, r => r.DepartmentId == departmentId);
         Assert.Null(row.Budget);
@@ -100,7 +64,7 @@ public sealed class BudgetIntegrationTests(SqlServerFixture fixture)
     public async Task Report_scope_is_resolved_on_the_server()
     {
         var isolated = await IsolatedDepartmentWithSpendAsync();
-        var url = $"/api/reports/budget-vs-actual?year={Today.Year}";
+        var url = $"/api/budgets/vs-actual?year={Today.Year}";
 
         using var financeManager = As(DemoDataSeeder.Manager);   // budgets.read.department, member of Finance only
         var managerRows = await financeManager.GetFromJsonAsync<BudgetVsActualRow[]>(url);
@@ -116,8 +80,8 @@ public sealed class BudgetIntegrationTests(SqlServerFixture fixture)
         Assert.Equal(HttpStatusCode.Forbidden, (await employee.GetAsync(url)).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await employee.GetAsync("/api/budgets")).StatusCode);
 
-        Assert.Equal(HttpStatusCode.BadRequest, (await admin.GetAsync($"/api/reports/budget-vs-actual?year={Today.Year}&month=13")).StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, (await admin.GetAsync("/api/reports/budget-vs-actual?year=1999")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await admin.GetAsync($"/api/budgets/vs-actual?year={Today.Year}&month=13")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await admin.GetAsync("/api/budgets/vs-actual?year=1999")).StatusCode);
     }
 
     [Fact]

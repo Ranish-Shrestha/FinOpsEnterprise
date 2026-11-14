@@ -31,6 +31,8 @@ internal static class SyntheticIdentityIds
         [ApplicationPermissions.BudgetsReadDepartment] = Guid.Parse("40000000-0000-0000-0000-00000000000a"),
         [ApplicationPermissions.BudgetsReadAll] = Guid.Parse("40000000-0000-0000-0000-00000000000b"),
         [ApplicationPermissions.BudgetsManage] = Guid.Parse("40000000-0000-0000-0000-00000000000c"),
+        [ApplicationPermissions.ReportsReadDepartment] = Guid.Parse("40000000-0000-0000-0000-00000000000d"),
+        [ApplicationPermissions.ReportsReadAll] = Guid.Parse("40000000-0000-0000-0000-00000000000e"),
     };
 
     /// <summary>
@@ -47,19 +49,19 @@ internal static class SyntheticIdentityIds
         [
             ApplicationPermissions.DepartmentsRead, ApplicationPermissions.ExpensesCreate,
             ApplicationPermissions.ExpensesReadDepartment, ApplicationPermissions.ExpensesApprove,
-            ApplicationPermissions.BudgetsReadDepartment
+            ApplicationPermissions.BudgetsReadDepartment, ApplicationPermissions.ReportsReadDepartment
         ],
         [FinanceOfficerRole] =
         [
             ApplicationPermissions.DepartmentsRead, ApplicationPermissions.DepartmentsReadAll,
             ApplicationPermissions.ExpensesCreate, ApplicationPermissions.ExpensesReadAll, ApplicationPermissions.ExpensesPost,
-            ApplicationPermissions.BudgetsReadAll, ApplicationPermissions.BudgetsManage
+            ApplicationPermissions.BudgetsReadAll, ApplicationPermissions.BudgetsManage, ApplicationPermissions.ReportsReadAll
         ],
         [AdminRole] =
         [
             ApplicationPermissions.DepartmentsRead, ApplicationPermissions.DepartmentsReadAll,
             ApplicationPermissions.UserRolesManage, ApplicationPermissions.ExpensesReadAll, ApplicationPermissions.AuditRead,
-            ApplicationPermissions.BudgetsReadAll
+            ApplicationPermissions.BudgetsReadAll, ApplicationPermissions.ReportsReadAll
         ],
     };
 }

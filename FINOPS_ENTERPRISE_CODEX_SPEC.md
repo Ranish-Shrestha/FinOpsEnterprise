@@ -4,7 +4,7 @@
 >
 > **How to use:** Open this file in VS Code and ask Codex (or another coding agent) to read it before making code changes. Work one milestone at a time. Do **not** attempt to implement the entire specification in one pass.
 >
-> **Current status (2026-11-14):** Phases 1–2 are complete, with hardening and CI added early. Phase 3 is complete: the expense workflow, budgets, the budget-vs-actual stored procedure, and execution-plan evidence. Phase 4 (reporting) is next; it needs a decision on report access first. See §10 and [docs/verification.md](docs/verification.md).
+> **Current status (2026-11-14):** Phases 1–2 are complete, with hardening and CI added early. Phase 3 is complete: the expense workflow, budgets, the budget-vs-actual stored procedure, and execution-plan evidence. Phase 4 (reporting) is complete. Phase 5 (reliability: messaging, worker, idempotency) is next. See §10 and [docs/verification.md](docs/verification.md).
 
 ## 1. Product overview
 
@@ -223,8 +223,12 @@ Status key: ✅ done · 🟡 partially verified · ⬜ not started.
   - **Round 3b:** monthly budgets, the parameterized stored procedure `finance.usp_BudgetVsActual`, and covering indexes. Measured list pages went from 2,667 logical reads to about 110–167; the plan test enforces this in CI.
 - **Done when:** A complete expense lifecycle works correctly under concurrent requests and access restrictions.
 
-### Phase 4 — SSRS (Week 6) ⬜
-- First, record an ADR for the report access boundary (SSRS has no Entra sign-in; see requirements review).
+### Phase 4 — SSRS (Week 6) ✅
+- *Status:* done, see [ADR 0004](docs/decisions/0004-report-access.md).
+  - Five reports from parameterized, self-validating stored procedures, rendered by the API as preview, PDF and Excel.
+  - Department isolation is enforced server-side and tested inside the exported files.
+  - Exports are audited.
+  - Matching RDL files are in `reports/SSRS`. Their data contract is checked in CI, but they have not been rendered on an SSRS server.
 - Build five RDL reports and provide a documented way to access them securely.
 - **Done when:** Authorized test users can run parameterized reports and export PDF/Excel; access boundaries are verified.
 
@@ -261,7 +265,7 @@ When acting on this repository:
 
 ## 12. Next instruction to paste into Codex
 
-> Read `FINOPS_ENTERPRISE_CODEX_SPEC.md`, `README.md`, `docs/requirements-review.md` and `docs/performance/expense-queries.md`, and examine the repository. Start **Phase 4 only**. First ask me which report-access design to use (the three options are in `docs/requirements-review.md`), and record the choice as an ADR. Then present a short plan for the five reports, reusing `finance.usp_BudgetVsActual` and the server-side department scope pattern. Implement in vertical slices with tests that prove cross-department isolation. Run the build, all tests including `Category=Database`, and the EF drift check, and update `docs/verification.md` with exact results.
+> Read `FINOPS_ENTERPRISE_CODEX_SPEC.md`, `README.md` and `docs/requirements-review.md`, and examine the repository. Start **Phase 5 only**. Work on the `main` branch. First ask me whether to use Azure Service Bus (needs an Azure subscription; cost) or a local substitute for development, and record the choice as an ADR. Then present a short plan: business events (for example `ExpenseApproved`), a transactional outbox written in the same transaction as the state change, a worker with retries, idempotent handling and dead-lettering, and tests proving no duplicate business effects under retries. Run all tests including `Category=Database`, and update `docs/verification.md` with exact results.
 
 ## 13. Portfolio demonstration checklist
 
@@ -270,7 +274,7 @@ When acting on this repository:
 - [x] Meaningful RBAC plus department/resource-based authorization.
 - [x] Expense workflow and auditable approvals.
 - [x] Complex EF Core/LINQ queries plus SQL optimization evidence.
-- [ ] SSRS/RDL reports with safe permissions and export.
+- [x] SSRS/RDL reports with safe permissions and export (API-rendered PDF and Excel; RDL files not yet rendered on SSRS).
 - [x] Automated unit, integration, and authorization tests.
 - [ ] Structured logging, monitoring, and health checks (logging + health done; monitoring pending).
 - [ ] Background processing and idempotency.

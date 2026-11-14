@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Shared data source. Credentials are configured on the report server, never stored here. -->
+<RptDataSource xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Name="FinOps">
+  <ConnectionProperties>
+    <Extension>SQL</Extension>
+    <ConnectString>Data Source=localhost,14333;Initial Catalog=FinOpsEnterprise;Encrypt=True;TrustServerCertificate=True</ConnectString>
+  </ConnectionProperties>
+  <DataSourceID>d432e9c2-8b6a-5ea1-acfa-ca3d4c4f6849</DataSourceID>
+</RptDataSource>

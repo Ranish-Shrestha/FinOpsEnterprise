@@ -36,7 +36,7 @@ describe('BudgetsService', () => {
 
   it('omits month for whole-year reports', () => {
     service.report(2026).subscribe();
-    const request = http.expectOne((r) => r.url === '/api/reports/budget-vs-actual');
+    const request = http.expectOne((r) => r.url === '/api/budgets/vs-actual');
     expect(request.request.params.get('year')).toBe('2026');
     expect(request.request.params.has('month')).toBe(false);
     request.flush([]);

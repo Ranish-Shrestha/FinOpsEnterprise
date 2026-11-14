@@ -1,6 +1,6 @@
 # Expense and report query performance
 
-Status: measured 2026-11-14 on SQL Server 2022 CU28 (Linux container). Reproduced on every CI run by
+Status: measured 2026-11-14 and re-measured after Phase 4 on SQL Server 2022 CU28 (Linux container). Reproduced on every CI run by
 `tests/FinOps.IntegrationTests/QueryPlanTests.cs`, which fails if a query regresses to a table scan or loses its read reduction.
 
 ## How it is measured
@@ -22,8 +22,8 @@ Status: measured 2026-11-14 on SQL Server 2022 CU28 (Linux container). Reproduce
 
 | Report (`finance.usp_BudgetVsActual`, all departments) | Without index | With `IX_ExpenseRequests_Reporting` | Plan after |
 | --- | ---: | ---: | --- |
-| One month | 2,667, clustered scan | **38** | Index Seek on `ExpenseDate` |
-| Whole year | 2,667, clustered scan | **825** | Index Seek (range is most of the table; the covering index is about 3× narrower than the table) |
+| One month | 2,643, clustered scan | **41** | Index Seek on `ExpenseDate` |
+| Whole year | 2,643, clustered scan | **891** | Index Seek (range is most of the table; the covering index is about 3× narrower than the table) |
 
 A full list page went from 2,667 reads to about 110 (employee and finance) or 167 (manager), which is **16–25× fewer**. Without workload indexes, every query scans the whole table.
 
@@ -41,7 +41,7 @@ The Phase 3a indexes existed but **no list query used them**. Every screen did a
 Also changed:
 
 - **Visibility predicate.** It was one catch-all `RequesterId = @me OR @readAll = 1 OR (@readDepartment = 1 AND DepartmentId IN (...))`. Each caller's flags are now applied in C#, so finance gets no filter, employees get `RequesterId = @me`, and managers get `RequesterId = @me OR DepartmentId IN (...)`. The cached plan no longer has to serve every kind of caller.
-- **Stored procedure.** It originally referenced a `Spend` CTE twice, and SQL Server evaluates a CTE at each reference, so it aggregated the expenses twice: 5,314 reads, then 1,610 with the index. It now aggregates once into `#Spend`, already limited to the caller's departments: 2,667 reads without the index, **38 / 825** with it.
+- **Stored procedure.** It originally referenced a `Spend` CTE twice, and SQL Server evaluates a CTE at each reference, so it aggregated the expenses twice: 5,314 reads, then 1,610 with the index. It now aggregates once into `#Spend`, already limited to the caller's departments: 2,667 reads without the index, **38 / 825** with it. Phase 4 added `Category` to the reporting index for `usp_ExpenseSummary`, which widened it slightly (now **41 / 891**). The test requires at least 10× fewer reads for one month and 2× for a whole year.
 
 ## Known limits
 

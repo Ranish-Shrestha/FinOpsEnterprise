@@ -56,8 +56,14 @@ internal sealed class ExpenseRequestConfiguration : IEntityTypeConfiguration<Exp
         // Budget-vs-actual report (finance.usp_BudgetVsActual): WHERE ExpenseDate in period, grouped by
         // department and month. Covering, so the report never reads the wide expense rows.
         builder.HasIndex(x => x.ExpenseDate)
-            .IncludeProperties(x => new { x.DepartmentId, x.Status, x.Amount, x.Currency })
+            .IncludeProperties(x => new { x.DepartmentId, x.Status, x.Amount, x.Currency, x.Category })
             .HasDatabaseName("IX_ExpenseRequests_Reporting");
+        // Transaction ledger (finance.usp_TransactionLedger): posted expenses by posting time. Filtered to
+        // posted rows only, so it stays small; the ledger's display columns come from key lookups (<= 5,000 rows).
+        builder.HasIndex(x => x.PostedAtUtc)
+            .HasFilter("[Status] = 'Posted'")
+            .IncludeProperties(x => new { x.DepartmentId })
+            .HasDatabaseName("IX_ExpenseRequests_Ledger");
     }
 }
 

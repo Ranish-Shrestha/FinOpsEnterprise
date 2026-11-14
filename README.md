@@ -13,7 +13,8 @@ A portfolio-quality internal financial operations platform: ASP.NET Core 10, Ang
 | 2.5 Hardening | Demo data out of migrations, per-request access cache, rate limiting, security headers, CI | Done |
 | 3a. Expense workflow | Draft → submit → approve/reject → post; separation of duties; ETag concurrency; audit trail; paged API; UI | Done ([design](docs/design/phase3-expenses.md)) |
 | 3b. Budgets and SQL | Monthly budgets, budget vs. actual via a stored procedure, covering indexes with execution-plan evidence | Done ([evidence](docs/performance/expense-queries.md)) |
-| 4–7 | SSRS, messaging, DevOps, Azure | Not started |
+| 4. Reporting | Five reports from parameterized stored procedures, as an in-app preview, PDF or Excel; matching SSRS RDL files; server-side department isolation; audited exports | Done ([ADR 0004](docs/decisions/0004-report-access.md)); RDL files not rendered on a real SSRS server |
+| 5–7 | Messaging and reliability, DevOps, Azure | Not started |
 
 Full plan: [FINOPS_ENTERPRISE_CODEX_SPEC.md](FINOPS_ENTERPRISE_CODEX_SPEC.md). What has actually been run: [docs/verification.md](docs/verification.md).
 
@@ -45,9 +46,10 @@ docs/
   security/identity-authorization.md  Boundaries, permissions, personas, Entra setup
   design/phase3-expenses.md       Expense and budget rules (accepted)
   performance/expense-queries.md  Execution-plan evidence, before and after
-  decisions/                      ADRs 0001–0003
+  decisions/                      ADRs 0001–0004
   requirements-review.md          Spec adjustments and open questions
   verification.md                 Dated log of what was run
+reports/SSRS/                     RDL report definitions (generated) and deployment notes
 .github/workflows/ci.yml          Build, tests, real-SQL tests, EF drift, Angular, audit
 docker-compose.yml                Local SQL Server only
 ```
@@ -151,6 +153,8 @@ In mock mode, use the **Development persona** picker:
 
 The seed data includes an expense in each state, so every view has something to show.
 
+**Reports:** in the *Reports* panel, pick a report, then use *Preview*, *PDF* or *Excel*. As **Demo Manager**, every report contains only Demo Finance, including inside the downloaded files. **Demo Administrator** also gets *Audit activity*. Employees don't see the panel.
+
 **Budgets:** as **Demo Finance Officer**, the *Budget vs. actual* panel shows every department. Use *Set budget* or *Edit* to change a month. As **Demo Manager**, the same panel shows only Demo Finance and has no edit controls. Employees don't see the panel at all.
 
 Then stop the database with `docker compose stop sqlserver` and refresh. The API stays live, readiness reports the database is unavailable, and departments report failure. No fake data is substituted. Start it again with `docker compose up -d --wait sqlserver`.
@@ -195,7 +199,9 @@ Step-by-step: [docs/security/identity-authorization.md](docs/security/identity-a
 | `GET /api/budgets?year=` | `budgets.read.department` (own departments) or `budgets.read.all` | Monthly budgets with `version` for updates |
 | `POST /api/budgets` | `budgets.manage` | Set a department's budget for a month (409 if it exists) |
 | `PUT /api/budgets/{id}` | `budgets.manage`, `If-Match` | Change a budget amount |
-| `GET /api/reports/budget-vs-actual?year=&month=` | `budgets.read.department` or `budgets.read.all` | Budget vs. spent (posted), committed (approved) and pending (submitted), per department and month. Runs `finance.usp_BudgetVsActual` |
+| `GET /api/budgets/vs-actual?year=&month=` | `budgets.read.department` or `budgets.read.all` | Budget vs. spent (posted), committed (approved) and pending (submitted), per department and month, for the Budgets panel |
+| `GET /api/reports` | Scope + provisioned user | The reports you may run, with their parameters and formats |
+| `GET /api/reports/{key}?format=json\|pdf\|xlsx` | `reports.read.department` or `reports.read.all`; `audit.read` for `audit-activity` | Run a report: `expense-summary`, `budget-vs-actual`, `approval-aging` or `transaction-ledger` (all with `from`/`to` or `year`/`month`), or `audit-activity`. Files are `no-store` and audited |
 
 Status codes:
 
@@ -252,4 +258,5 @@ Press Ctrl+C in the API and UI terminals, then run `docker compose stop`. `docke
 - [ADR 0001: Foundation](docs/decisions/0001-foundation.md)
 - [ADR 0002: Entra authentication and application authorization](docs/decisions/0002-identity-authorization.md)
 - [ADR 0003: Demo data out of migrations; HTTP hardening](docs/decisions/0003-hardening-and-demo-data.md)
+- [ADR 0004: Report access and rendering](docs/decisions/0004-report-access.md)
 - [Requirements review and open questions](docs/requirements-review.md)

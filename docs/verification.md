@@ -31,6 +31,51 @@ Pop-Location
 
 ---
 
+## 2026-11-14: Phase 4, reporting
+
+Scope: [ADR 0004](decisions/0004-report-access.md). Worked on `main`.
+
+| Check | Result |
+| --- | --- |
+| .NET locked restore and Release build | Passed; 0 warnings, 0 errors. New packages: QuestPDF 2026.9.2 and ClosedXML 0.105.1, with no NuGet vulnerability warnings |
+| Unit tests | **119 passed**. Adds the report service: catalog by permission, scope, validation, the row limit, auditing |
+| HTTP, model and renderer tests | **35 passed**. Adds real PDF generation (empty, small and 400-row reports), and Excel types, formats, totals formulas and formula-injection safety |
+| Real SQL Server tests | **53 passed**. Adds 16 report tests; the plan test was re-measured |
+| EF model vs migrations | No pending model changes (migration `ReportingProcedures`) |
+| RDL generation | Deterministic: regenerating produces byte-identical files |
+| Angular typecheck / tests / build | Passed / **27 passed** / 233.7 kB raw, 64.4 kB transferred |
+
+**Total: 234 automated tests passing.**
+
+What the new real-SQL tests establish:
+
+- **Catalog by role:** an employee sees no reports; a manager and finance see 4; an administrator sees 5.
+- **Expense summary is exact** on an isolated department: 3 expenses; posted 100, approved 50, pending 25, total 175. Draft and cancelled expenses are ignored.
+- **Approval aging** shows the pending 25 in the "0-2 days" band.
+- **The transaction ledger is by posting date:** both postings made today appear, including one whose expense date was last month.
+- **Isolation inside the files:** for every financial report, the Finance manager's JSON preview **and the downloaded Excel workbook** contain only Demo Finance. The test reads every cell and finds no other department's name.
+- **Exports:** PDF and Excel are returned with the correct content type, file name and `Cache-Control: no-store`, and are audited as `report.exported` with their format.
+- **Audit activity:** refused for managers and finance, allowed for the administrator.
+- **Errors:**
+  - Reversed dates, a range over 366 days, month 13 and an unknown format return 400 with the field named.
+  - An unknown report returns 404.
+- **Procedure self-validation:** a reversed range → 50004, `MaxRows` 0 → 50006, invalid JSON → 50003.
+- **RDL contract:** all 5 RDL files are parsed, and every dataset's procedure and query parameters exist in the migrated database.
+
+**Found and fixed during verification:**
+
+- **Reserved word:** `identity` is a reserved word in T-SQL, so the hand-written procedures now use `[identity].UserProfiles`.
+- **Wider reporting index:** adding `Category` to it made the whole-year budget report's saving 2.97× (891 vs 2,643 reads). The plan test's thresholds now reflect what each query can achieve: ≥10× for one month (41 reads) and ≥2× for a whole year.
+
+**Not verified:**
+
+- **RDL files:** not rendered on a real SSRS server, and not validated against Microsoft's RDL schema (its published URL returns 404).
+- **Browser:** no manual walkthrough of the Reports panel; component tests cover the hidden-when-empty state, the preview, totals and per-report parameters.
+- **Linux PDF rendering:** the PDF renderer was exercised on Windows only. CI will be the first run on Linux, where QuestPDF uses its bundled native libraries.
+- **Your local database:** the migrations haven't been applied to it. Run `dotnet ef database update`.
+
+---
+
 ## 2026-11-14: Phase 3b, budgets, stored procedure and query evidence
 
 Branch `phase-3b-budgets`.
