@@ -16,15 +16,16 @@ env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
+# Runners are pinned to ubuntu-24.04 (not ubuntu-latest) so OS upgrades are a deliberate change.
 jobs:
   backend:
     name: .NET build and tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
 
@@ -59,7 +60,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dotnet-test-results
           path: "**/TestResults/*.trx"
@@ -67,15 +68,15 @@ jobs:
 
   frontend:
     name: Angular typecheck, tests and build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
       run:
         working-directory: src/finops-web
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -96,12 +97,15 @@ jobs:
       - name: Full dependency audit (informational)
         run: npm audit || true
 
+  # Blocks pull requests that add dependencies with known high-severity vulnerabilities.
+  # Requires the repository's Dependency graph (Settings → Advanced Security → Dependency graph);
+  # without it this job fails with "Dependency review is not supported on this repository".
   dependency-review:
     name: Dependency review
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/dependency-review-action@v4
+      - uses: actions/checkout@v7
+      - uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: high

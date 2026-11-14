@@ -22,6 +22,183 @@ namespace FinOps.Infrastructure.Persistence.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("FinOps.Domain.Audit.AuditEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<Guid?>("ActorUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("Metadata")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<Guid?>("ResourceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ResourceType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OccurredAtUtc");
+
+                    b.HasIndex("ResourceType", "ResourceId");
+
+                    b.ToTable("AuditEvents", "audit");
+                });
+
+            modelBuilder.Entity("FinOps.Domain.Expenses.ApprovalDecision", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ApproverId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTimeOffset>("DecidedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("ExpenseRequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApproverId");
+
+                    b.HasIndex("ExpenseRequestId", "DecidedAtUtc");
+
+                    b.ToTable("ApprovalDecisions", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_ApprovalDecisions_RejectionComment", "[Outcome] <> 'Rejected' OR LEN(LTRIM(RTRIM([Comment]))) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("FinOps.Domain.Expenses.ExpenseRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .IsUnicode(false)
+                        .HasColumnType("char(3)")
+                        .IsFixedLength();
+
+                    b.Property<DateTimeOffset?>("DecidedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("DepartmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateOnly>("ExpenseDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateTimeOffset?>("PostedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("PostedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("RequesterId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<DateTimeOffset?>("SubmittedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PostedById");
+
+                    b.HasIndex("RequesterId", "CreatedAtUtc")
+                        .HasDatabaseName("IX_ExpenseRequests_Requester");
+
+                    b.HasIndex("DepartmentId", "Status", "SubmittedAtUtc")
+                        .HasDatabaseName("IX_ExpenseRequests_ApprovalQueue");
+
+                    b.ToTable("ExpenseRequests", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_ExpenseRequests_Amount_Positive", "[Amount] > 0");
+
+                            t.HasCheckConstraint("CK_ExpenseRequests_Currency_Iso", "LEN([Currency]) = 3");
+
+                            t.HasCheckConstraint("CK_ExpenseRequests_Posted", "([Status] = 'Posted' AND [PostedAtUtc] IS NOT NULL AND [PostedById] IS NOT NULL) OR ([Status] <> 'Posted' AND [PostedAtUtc] IS NULL)");
+
+                            t.HasCheckConstraint("CK_ExpenseRequests_Status", "[Status] IN ('Draft','Submitted','Approved','Rejected','Posted','Cancelled')");
+                        });
+                });
+
             modelBuilder.Entity("FinOps.Domain.Identity.DepartmentMembership", b =>
                 {
                     b.Property<Guid>("UserId")
@@ -80,6 +257,36 @@ namespace FinOps.Infrastructure.Persistence.Migrations
                         {
                             Id = new Guid("40000000-0000-0000-0000-000000000003"),
                             Name = "user-roles.manage"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000004"),
+                            Name = "expenses.create"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000005"),
+                            Name = "expenses.read.department"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000006"),
+                            Name = "expenses.read.all"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000007"),
+                            Name = "expenses.approve"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000008"),
+                            Name = "expenses.post"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000009"),
+                            Name = "audit.read"
                         });
                 });
 
@@ -115,6 +322,11 @@ namespace FinOps.Infrastructure.Persistence.Migrations
                         {
                             Id = new Guid("30000000-0000-0000-0000-000000000003"),
                             Name = "Administrator"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000004"),
+                            Name = "FinanceOfficer"
                         });
                 });
 
@@ -140,8 +352,53 @@ namespace FinOps.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            RoleId = new Guid("30000000-0000-0000-0000-000000000001"),
+                            PermissionId = new Guid("40000000-0000-0000-0000-000000000004")
+                        },
+                        new
+                        {
                             RoleId = new Guid("30000000-0000-0000-0000-000000000002"),
                             PermissionId = new Guid("40000000-0000-0000-0000-000000000001")
+                        },
+                        new
+                        {
+                            RoleId = new Guid("30000000-0000-0000-0000-000000000002"),
+                            PermissionId = new Guid("40000000-0000-0000-0000-000000000004")
+                        },
+                        new
+                        {
+                            RoleId = new Guid("30000000-0000-0000-0000-000000000002"),
+                            PermissionId = new Guid("40000000-0000-0000-0000-000000000005")
+                        },
+                        new
+                        {
+                            RoleId = new Guid("30000000-0000-0000-0000-000000000002"),
+                            PermissionId = new Guid("40000000-0000-0000-0000-000000000007")
+                        },
+                        new
+                        {
+                            RoleId = new Guid("30000000-0000-0000-0000-000000000004"),
+                            PermissionId = new Guid("40000000-0000-0000-0000-000000000001")
+                        },
+                        new
+                        {
+                            RoleId = new Guid("30000000-0000-0000-0000-000000000004"),
+                            PermissionId = new Guid("40000000-0000-0000-0000-000000000002")
+                        },
+                        new
+                        {
+                            RoleId = new Guid("30000000-0000-0000-0000-000000000004"),
+                            PermissionId = new Guid("40000000-0000-0000-0000-000000000004")
+                        },
+                        new
+                        {
+                            RoleId = new Guid("30000000-0000-0000-0000-000000000004"),
+                            PermissionId = new Guid("40000000-0000-0000-0000-000000000006")
+                        },
+                        new
+                        {
+                            RoleId = new Guid("30000000-0000-0000-0000-000000000004"),
+                            PermissionId = new Guid("40000000-0000-0000-0000-000000000008")
                         },
                         new
                         {
@@ -157,6 +414,16 @@ namespace FinOps.Infrastructure.Persistence.Migrations
                         {
                             RoleId = new Guid("30000000-0000-0000-0000-000000000003"),
                             PermissionId = new Guid("40000000-0000-0000-0000-000000000003")
+                        },
+                        new
+                        {
+                            RoleId = new Guid("30000000-0000-0000-0000-000000000003"),
+                            PermissionId = new Guid("40000000-0000-0000-0000-000000000006")
+                        },
+                        new
+                        {
+                            RoleId = new Guid("30000000-0000-0000-0000-000000000003"),
+                            PermissionId = new Guid("40000000-0000-0000-0000-000000000009")
                         });
                 });
 
@@ -243,6 +510,41 @@ namespace FinOps.Infrastructure.Persistence.Migrations
                             Id = new Guid("33333333-3333-3333-3333-333333333333"),
                             Name = "Demo Operations"
                         });
+                });
+
+            modelBuilder.Entity("FinOps.Domain.Expenses.ApprovalDecision", b =>
+                {
+                    b.HasOne("FinOps.Domain.Identity.UserProfile", null)
+                        .WithMany()
+                        .HasForeignKey("ApproverId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FinOps.Domain.Expenses.ExpenseRequest", null)
+                        .WithMany()
+                        .HasForeignKey("ExpenseRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("FinOps.Domain.Expenses.ExpenseRequest", b =>
+                {
+                    b.HasOne("FinOps.Domain.Organization.Department", null)
+                        .WithMany()
+                        .HasForeignKey("DepartmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FinOps.Domain.Identity.UserProfile", null)
+                        .WithMany()
+                        .HasForeignKey("PostedById")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FinOps.Domain.Identity.UserProfile", null)
+                        .WithMany()
+                        .HasForeignKey("RequesterId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("FinOps.Domain.Identity.DepartmentMembership", b =>

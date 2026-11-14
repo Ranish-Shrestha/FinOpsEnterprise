@@ -1,0 +1,139 @@
+<section class="expenses" aria-labelledby="expenses-heading">
+  <div class="panel-header">
+    <div><p class="eyebrow">FINANCE</p><h2 id="expenses-heading">Expenses</h2></div>
+    @if (canCreate() && memberDepartments().length > 0) {
+      <button type="button" (click)="startCreate()" [disabled]="busy()">New expense</button>
+    }
+  </div>
+  <p class="panel-description">
+    Submit, approve and post reimbursement requests. The tabs and buttons follow your role; the API checks every rule again.
+  </p>
+
+  @if (!user()) {
+    <p class="empty-state" role="status">Sign in with an active account to see expenses.</p>
+  } @else {
+    <div class="tabs" role="tablist" aria-label="Expense views">
+      @for (tab of tabs(); track tab.view) {
+        <button type="button" role="tab" class="tab" [class.tab-current]="view() === tab.view"
+          [attr.aria-selected]="view() === tab.view" (click)="show(tab.view)">{{ tab.label }}</button>
+      }
+    </div>
+
+    @if (formMode() !== 'closed') {
+      <form class="expense-form" (submit)="$event.preventDefault(); save()" aria-label="Expense details">
+        <h3>{{ formMode() === 'create' ? 'New expense' : 'Edit draft' }}</h3>
+        <div class="form-grid">
+          <label>Department
+            <select [value]="form().departmentId" (change)="setField('departmentId', $any($event.target).value)"
+              [disabled]="formMode() === 'edit'" required>
+              @for (d of memberDepartments(); track d.id) { <option [value]="d.id">{{ d.name }}</option> }
+            </select>
+          </label>
+          <label>Amount (USD)
+            <input type="number" min="0.01" step="0.01" [value]="form().amount || ''" required
+              (input)="setField('amount', $any($event.target).value)" />
+          </label>
+          <label>Category
+            <select [value]="form().category" (change)="setField('category', $any($event.target).value)">
+              @for (c of categories; track c) { <option [value]="c">{{ c }}</option> }
+            </select>
+          </label>
+          <label>Date
+            <input type="date" [value]="form().expenseDate" required (input)="setField('expenseDate', $any($event.target).value)" />
+          </label>
+          <label class="span-2">Description
+            <input type="text" maxlength="500" [value]="form().description" required
+              (input)="setField('description', $any($event.target).value)" />
+          </label>
+        </div>
+        @if (actionError()) { <p class="error" role="alert">{{ actionError() }}</p> }
+        <div class="actions">
+          <button type="submit" [disabled]="busy()">{{ formMode() === 'create' ? 'Create draft' : 'Save draft' }}</button>
+          <button type="button" class="secondary" (click)="cancelForm()" [disabled]="busy()">Close</button>
+        </div>
+      </form>
+    }
+
+    <div class="expense-layout" [class.with-detail]="selected()">
+      <div>
+        @if (loading()) {
+          <p class="empty-state" role="status">Loading expenses...</p>
+        } @else if (listError()) {
+          <div class="empty-state" role="alert"><strong>We couldn't load expenses.</strong><p>{{ listError() }}</p></div>
+        } @else if (items().length === 0) {
+          <p class="empty-state">No expenses in this view.</p>
+        } @else {
+          <table class="expense-table">
+            <caption class="visually-hidden">Expenses, {{ total() }} total</caption>
+            <thead><tr><th scope="col">Date</th><th scope="col">Description</th><th scope="col">Requester</th><th scope="col" class="num">Amount</th><th scope="col">Status</th></tr></thead>
+            <tbody>
+              @for (e of items(); track e.id) {
+                <tr [class.row-selected]="selected()?.id === e.id">
+                  <td>{{ e.expenseDate | date: 'mediumDate' }}</td>
+                  <td><button type="button" class="link" (click)="open(e.id)">{{ e.description }}</button>
+                    <span class="muted">{{ e.category }} · {{ e.departmentName }}</span></td>
+                  <td>{{ e.requesterName }}</td>
+                  <td class="num">{{ e.amount | currency: e.currency }}</td>
+                  <td><span [class]="statusClass(e.status)">{{ e.status }}</span></td>
+                </tr>
+              }
+            </tbody>
+          </table>
+          @if (pageCount() > 1) {
+            <nav class="pager" aria-label="Expense pages">
+              <button type="button" class="secondary" (click)="goTo(page() - 1)" [disabled]="page() === 1">Previous</button>
+              <span>Page {{ page() }} of {{ pageCount() }}</span>
+              <button type="button" class="secondary" (click)="goTo(page() + 1)" [disabled]="page() === pageCount()">Next</button>
+            </nav>
+          }
+        }
+      </div>
+
+      @if (selected(); as e) {
+        <aside class="expense-detail" aria-labelledby="detail-heading">
+          <div class="panel-header">
+            <h3 id="detail-heading">{{ e.description }}</h3>
+            <button type="button" class="secondary" (click)="closeDetail()" aria-label="Close details">Close</button>
+          </div>
+          <dl>
+            <dt>Status</dt><dd><span [class]="statusClass(e.status)">{{ e.status }}</span></dd>
+            <dt>Amount</dt><dd>{{ e.amount | currency: e.currency }}</dd>
+            <dt>Requester</dt><dd>{{ e.requesterName }}</dd>
+            <dt>Department</dt><dd>{{ e.departmentName }}</dd>
+            <dt>Category</dt><dd>{{ e.category }}</dd>
+            <dt>Expense date</dt><dd>{{ e.expenseDate | date: 'mediumDate' }}</dd>
+            @if (e.postedAtUtc) { <dt>Posted</dt><dd>{{ e.postedAtUtc | date: 'medium' }}</dd> }
+          </dl>
+
+          @if (e.decisions.length > 0) {
+            <h4>Decisions</h4>
+            <ul class="decisions">
+              @for (d of e.decisions; track d.decidedAtUtc) {
+                <li><strong>{{ d.outcome }}</strong> by {{ d.approverName }} · {{ d.decidedAtUtc | date: 'medium' }}
+                  @if (d.comment) { <q>{{ d.comment }}</q> }</li>
+              }
+            </ul>
+          }
+
+          @if (needsComment()) {
+            <label class="comment">Comment <span class="muted">(required to reject)</span>
+              <textarea rows="2" maxlength="1000" [value]="comment()" (input)="comment.set($any($event.target).value)"></textarea>
+            </label>
+          }
+
+          @if (actionError() && formMode() === 'closed') { <p class="error" role="alert">{{ actionError() }}</p> }
+
+          <div class="actions">
+            @if (e.allowedActions.includes('edit')) {
+              <button type="button" class="secondary" (click)="startEdit()" [disabled]="busy()">Edit</button>
+            }
+            @for (a of transitions(); track a) {
+              <button type="button" [class.danger]="a === 'reject' || a === 'cancel'" (click)="act(a)" [disabled]="busy()">{{ label(a) }}</button>
+            }
+            @if (e.allowedActions.length === 0) { <span class="muted">No actions available to you.</span> }
+          </div>
+        </aside>
+      }
+    </div>
+  }
+</section>

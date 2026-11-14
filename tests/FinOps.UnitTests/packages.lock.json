@@ -93,6 +93,12 @@
           "xunit.extensibility.core": "[2.9.3]"
         }
       },
+      "finops.application": {
+        "type": "Project",
+        "dependencies": {
+          "FinOps.Domain": "[1.0.0, )"
+        }
+      },
       "finops.domain": {
         "type": "Project"
       }

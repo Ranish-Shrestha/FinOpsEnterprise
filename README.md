@@ -11,7 +11,8 @@ A portfolio-quality internal financial operations platform: ASP.NET Core 10, Ang
 | 1. Foundation | Solution layout, SQL Server, EF migrations, health, OpenAPI, Angular shell | Done |
 | 2. Identity and authorization | Entra OIDC/PKCE, JWT validation, app-owned roles, permissions and dated memberships, mock personas | Done; real Entra sign-in not yet verified with a tenant |
 | 2.5 Hardening | Demo data out of migrations, per-request access cache, rate limiting, security headers, CI | Done |
-| 3. Expenses and approvals | State machine, concurrency, audit | [Design proposed](docs/design/phase3-expenses.md) |
+| 3a. Expense workflow | Draft → submit → approve/reject → post; separation of duties; ETag concurrency; audit trail; paged API; UI | Done ([design](docs/design/phase3-expenses.md)) |
+| 3b. Budgets and SQL | Budgets, budget vs. actual, stored procedure, execution-plan evidence | Next |
 | 4–7 | SSRS, messaging, DevOps, Azure | Not started |
 
 Full plan: [FINOPS_ENTERPRISE_CODEX_SPEC.md](FINOPS_ENTERPRISE_CODEX_SPEC.md). What has actually been run: [docs/verification.md](docs/verification.md).
@@ -101,12 +102,12 @@ dotnet ef database update --project src/FinOps.Infrastructure --startup-project 
 dotnet run --project src/FinOps.Api -- seed-demo-data
 ```
 
-Run `database update` **before** `seed-demo-data`: the first creates the tables, the second fills in demo users. A fresh database prints `Demo data seeded: 12 row(s) inserted.`
+Run `database update` **before** `seed-demo-data`: the first creates the tables, the second fills in demo users. It prints how many rows it inserted; running it again prints `0 row(s)`.
 
 - **Configuration.** The API reads the connection string from user secrets or `ConnectionStrings__FinOps`, never from `.env`. `TrustServerCertificate` and the `sa` login are for the local container only.
 - **Migrations** create schemas, tables and **reference data** (departments, roles, permissions). They never create user accounts and never run on API startup.
 - **`seed-demo-data`** inserts the four synthetic personas below. It runs only in Development, is safe to repeat, and only inserts missing rows.
-- **Upgrading an existing Phase 2 database:** `database update` removes the old migration-seeded demo users. Run `seed-demo-data` again afterwards.
+- **After pulling new migrations:** run `database update`, then `seed-demo-data` again. It adds only what is missing, such as the Phase 3 personas and sample expenses.
 
 ### 3. Start the API (terminal 1, leave it open)
 
@@ -131,12 +132,23 @@ Wait for `Local: http://127.0.0.1:4200/`, then open **http://127.0.0.1:4200**. T
 
 In mock mode, use the **Development persona** picker:
 
-| Persona | Expected result |
-| --- | --- |
-| Demo Employee | Sees **Demo Engineering** only |
-| Demo Manager | Sees **Demo Finance** only. Their Operations membership has expired |
-| Demo Administrator | Sees all three departments (`departments.read.all`) |
-| Demo Former Employee | Inactive user: identity shows no access and departments fail to load (403) |
+| Persona | Departments | Expenses |
+| --- | --- | --- |
+| Demo Employee | **Demo Engineering** only | Creates, submits, withdraws and revises their own |
+| Demo Engineering Manager | Demo Engineering | Approves or rejects Engineering expenses, but **never their own** |
+| Demo Finance Officer | All three | Sees all expenses; posts approved ones, but never their own |
+| Demo Manager | **Demo Finance** only (Operations membership expired) | Approves Finance expenses; Engineering expenses are invisible (404) |
+| Demo Administrator | All three | Reads all expenses and the audit trail; cannot approve or post |
+| Demo Former Employee | Inactive user: no access (403) | No access |
+
+**Walk through the expense flow:**
+
+1. As **Demo Employee**, click *New expense*, create a draft, open it and choose *Submit for approval*.
+2. Switch to **Demo Engineering Manager**. Under *Approval queue*, open it and approve it, or reject it with a comment.
+3. Switch to **Demo Finance Officer**. Under *Ready to post*, open it and choose *Post to ledger*.
+4. As the **Engineering Manager**, open "Team lunch after the release" (their own submitted expense): no approve button is offered, and the API refuses with 403.
+
+The seed data includes an expense in each state, so every view has something to show.
 
 Then stop the database with `docker compose stop sqlserver` and refresh. The API stays live, readiness reports the database is unavailable, and departments report failure. No fake data is substituted. Start it again with `docker compose up -d --wait sqlserver`.
 
@@ -169,11 +181,24 @@ Step-by-step: [docs/security/identity-authorization.md](docs/security/identity-a
 | `GET /openapi/v1.json` | Anonymous, **Development only** | OpenAPI document |
 | `GET /api/me` | Scope + provisioned active user | Profile, roles, permissions and active department IDs |
 | `GET /api/departments` | Scope + `departments.read` | Departments filtered by membership, or all with `departments.read.all` |
+| `GET /api/expenses` | Scope + provisioned user | Paged list of visible expenses. Filters: `status`, `departmentId`, `mine`, `sort` (`createdAt`, `submittedAt`, `expenseDate`, `amount`; prefix `-` for descending), `page`, `pageSize` (max 100) |
+| `GET /api/expenses/{id}` | Scope + can view | Detail, approval history, `allowedActions`, `ETag` |
+| `POST /api/expenses` | `expenses.create` + active membership in the department | Create a draft (201 + `Location` + `ETag`) |
+| `PUT /api/expenses/{id}` | `expenses.create`, owner, `If-Match` | Edit a draft |
+| `POST /api/expenses/{id}/submit\|withdraw\|cancel\|revise` | `expenses.create`, owner, `If-Match` | Requester's transitions |
+| `POST /api/expenses/{id}/approve\|reject` | `expenses.approve`, manager of the department, not the requester, `If-Match` | Decision (`{ "comment": "..." }`; required to reject) |
+| `POST /api/expenses/{id}/post` | `expenses.post`, not the requester, `If-Match` | Post an approved expense |
+| `GET /api/audit-events` | `audit.read` | Paged audit trail, newest first |
 
 Status codes:
 
 - **401:** missing or invalid credentials.
-- **403:** valid caller without the scope, provisioning or permission.
+- **400:** validation errors (`errors` keyed by field), or invalid paging, sort or status values.
+- **403:** valid caller without the scope, provisioning or permission, or a separation-of-duties violation (for example approving your own expense).
+- **404:** the resource doesn't exist **or you may not see it**. The two cases are deliberately indistinguishable, so IDs cannot be probed.
+- **409:** the transition isn't valid from the expense's current state.
+- **412:** `If-Match` doesn't match the current version: someone else changed the expense. Reload it and retry.
+- **428:** `If-Match` is missing on a write.
 - **429:** rate limit exceeded (default 120 requests per 60 s per caller on `/api/*`; set `RateLimiting:PermitLimit` and `RateLimiting:WindowSeconds` to change it).
 - **500:** Problem Details with a `traceId`, never exception text.
 

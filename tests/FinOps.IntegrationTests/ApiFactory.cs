@@ -20,7 +20,7 @@ internal static class TestUsers
 {
     internal const string Employee = "20000000-0000-0000-0000-000000000001";
     internal const string Administrator = "20000000-0000-0000-0000-000000000003";
-    internal const string NoPermissions = "20000000-0000-0000-0000-000000000005";
+    internal const string NoPermissions = "20000000-0000-0000-0000-000000000098";
     internal const string Unprovisioned = "20000000-0000-0000-0000-000000000099";
 }
 
@@ -118,7 +118,8 @@ internal sealed class ApiFactory(
             CurrentUserDto? user = objectId.ToString() switch
             {
                 TestUsers.Employee => new(Guid.NewGuid(), "HTTP Employee", "employee@example.invalid",
-                    ["Employee"], [ApplicationPermissions.DepartmentsRead], [TestDepartments.Engineering.Id]),
+                    ["Employee"], [ApplicationPermissions.DepartmentsRead, ApplicationPermissions.ExpensesCreate],
+                    [TestDepartments.Engineering.Id]),
                 TestUsers.Administrator => new(Guid.NewGuid(), "HTTP Administrator", "admin@example.invalid",
                     ["Administrator"], [ApplicationPermissions.DepartmentsRead, ApplicationPermissions.DepartmentsReadAll], []),
                 TestUsers.NoPermissions => new(Guid.NewGuid(), "HTTP No Permissions", "none@example.invalid",

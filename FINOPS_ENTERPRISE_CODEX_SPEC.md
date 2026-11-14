@@ -4,7 +4,7 @@
 >
 > **How to use:** Open this file in VS Code and ask Codex (or another coding agent) to read it before making code changes. Work one milestone at a time. Do **not** attempt to implement the entire specification in one pass.
 >
-> **Current status (2026-11-14):** Phases 1–2 are complete, with hardening and CI added early. Phase 3 is next, starting from [docs/design/phase3-expenses.md](docs/design/phase3-expenses.md). See §10 and [docs/verification.md](docs/verification.md).
+> **Current status (2026-11-14):** Phases 1–2 are complete, with hardening and CI added early. In Phase 3, the expense workflow (round 3a) is complete. Budgets, a stored procedure and execution-plan evidence (round 3b) are next. See §10 and [docs/verification.md](docs/verification.md).
 
 ## 1. Product overview
 
@@ -215,10 +215,10 @@ Status key: ✅ done · 🟡 partially verified · ⬜ not started.
 - **Done when:** Valid users can sign in; permission and cross-department access tests pass.
 - *Status:* access tests pass against real SQL Server; a real Entra sign-in still needs to be verified with a tenant. Hardening and CI were pulled forward from Phase 6 (ADR 0003).
 
-### Phase 3 — Finance workflows + SQL (Weeks 4–5) ⬜
+### Phase 3 — Finance workflows + SQL (Weeks 4–5) 🟡
 - Expense CRUD, submission, approvals, budget tracking, migrations, LINQ, stored procedures, indexes.
 - Audit events for every state change ship **in this phase**, in the same transaction as the change.
-- Settle the *Decision needed* items in `docs/design/phase3-expenses.md` before coding.
+- *Status:* round 3a is done: the expense lifecycle with separation of duties, ETag concurrency proven under parallel approvals, audit, paged API and UI. Round 3b remains: budgets, budget vs. actual, a stored procedure, and index and execution-plan evidence.
 - **Done when:** A complete expense lifecycle works correctly under concurrent requests and access restrictions.
 
 ### Phase 4 — SSRS (Week 6) ⬜
@@ -265,8 +265,8 @@ When acting on this repository:
 
 - [x] Realistic enterprise architecture diagram and ADRs.
 - [x] SSO with OAuth 2.0/OIDC and API JWT validation (Entra sign-in pending tenant verification).
-- [ ] Meaningful RBAC plus department/resource-based authorization.
-- [ ] Expense workflow and auditable approvals.
+- [x] Meaningful RBAC plus department/resource-based authorization.
+- [x] Expense workflow and auditable approvals.
 - [ ] Complex EF Core/LINQ queries plus SQL optimization evidence.
 - [ ] SSRS/RDL reports with safe permissions and export.
 - [x] Automated unit, integration, and authorization tests.

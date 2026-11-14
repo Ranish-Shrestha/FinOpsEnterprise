@@ -22,11 +22,26 @@ Membership dates use a half-open interval, `[StartsAtUtc, EndsAtUtc)`. Both the 
 
 ## Permission catalog
 
-| Permission | Employee | Manager | Administrator | Grants |
-| --- | --- | --- | --- | --- |
-| `departments.read` | Yes | Yes | Yes | `GET /api/departments` |
-| `departments.read.all` | | | Yes | All departments, regardless of membership |
-| `user-roles.manage` | | | Yes | Reserved for the admin feature (no endpoint yet) |
+| Permission | Employee | Manager | FinanceOfficer | Administrator | Grants |
+| --- | --- | --- | --- | --- | --- |
+| `departments.read` | Yes | Yes | Yes | Yes | `GET /api/departments` |
+| `departments.read.all` | | | Yes | Yes | All departments, regardless of membership |
+| `user-roles.manage` | | | | Yes | Reserved for the admin feature (no endpoint yet) |
+| `expenses.create` | Yes | Yes | Yes | | Create and manage your **own** expenses, only in departments where you are an active member |
+| `expenses.read.department` | | Yes | | | Read expenses of departments where you are an active member |
+| `expenses.read.all` | | | Yes | Yes | Read every expense |
+| `expenses.approve` | | Yes | | | Approve or reject expenses of your **own departments**, never your own expense |
+| `expenses.post` | | | Yes | | Post approved expenses, never your own |
+| `audit.read` | | | | Yes | `GET /api/audit-events` |
+
+**Separation of duties.** Managers approve, finance posts, and administrators manage access and read the audit trail but never approve or post money. The domain refuses any approval, rejection or posting by the expense's own requester, whatever the caller's permissions.
+
+**Resource rules for expenses** (in `ExpenseAccessPolicy`, mirrored by the SQL list filter):
+
+- *Visible* means you are the requester, or you have `expenses.read.all`, or you have `expenses.read.department` and an active membership in the expense's department.
+- An invisible expense returns **404**, the same as one that doesn't exist.
+- A visible expense you may not act on returns **403**.
+- Every denied mutation is recorded in `audit.AuditEvents` with outcome `Denied`.
 
 Roles, permissions and role-permission grants are **reference data** and ship in migrations. `PermissionCatalogTests` fails if the code catalog and the migrated rows disagree. To add a permission, add it to `ApplicationPermissions.All` and to `PermissionConfiguration`, then add a migration.
 
@@ -40,6 +55,10 @@ Created by `dotnet run --project src/FinOps.Api -- seed-demo-data` (Development 
 | Demo Manager | `20000000-0000-0000-0000-000000000002` | Manager | Finance (active), Operations (ended 2026-03-01) | Demo Finance |
 | Demo Administrator | `20000000-0000-0000-0000-000000000003` | Administrator | none | All three |
 | Demo Former Employee | `20000000-0000-0000-0000-000000000004` | Employee, **inactive** | Engineering (active) | 403 |
+| Demo Finance Officer | `20000000-0000-0000-0000-000000000005` | FinanceOfficer | Finance (active) | All three |
+| Demo Engineering Manager | `20000000-0000-0000-0000-000000000006` | Manager | Engineering (active) | Demo Engineering |
+
+The seed also creates four sample expenses: an Employee draft, an Employee submitted expense, an Employee expense approved by the Engineering Manager and ready to post, and the Engineering Manager's own submitted expense, which shows the self-approval block.
 
 In mock mode the Angular shell has a persona picker. It sends `X-Development-User: <object ID>`. The API accepts that header only when `ASPNETCORE_ENVIRONMENT=Development` and `Security:UseDevelopmentMockAuthentication=true`. Enabling mock mode in any other environment fails at startup.
 

@@ -166,6 +166,64 @@ public sealed class AuthorizationTests
     }
 }
 
+public sealed class ExpenseContractTests
+{
+    private static readonly string AnyId = Guid.NewGuid().ToString();
+
+    [Fact]
+    public async Task Expense_endpoints_require_authentication()
+    {
+        await using var factory = new ApiFactory();
+        using var client = ApiFactory.CreateHttpsClient(factory);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/expenses")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsync($"/api/expenses/{AnyId}/submit", null)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Transitions_without_if_match_are_428_before_any_database_work()
+    {
+        await using var factory = new ApiFactory();
+        using var client = ApiFactory.CreateHttpsClient(factory, TestUsers.Employee);
+        var response = await client.PostAsync($"/api/expenses/{AnyId}/submit", null);
+        Assert.Equal((HttpStatusCode)428, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+    }
+
+    [Fact]
+    public async Task Approving_without_the_approve_permission_is_403()
+    {
+        await using var factory = new ApiFactory();
+        using var client = ApiFactory.CreateHttpsClient(factory, TestUsers.Employee);
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/expenses/{AnyId}/approve");
+        request.Headers.TryAddWithoutValidation("If-Match", "\"AAAAAAAAB9E=\"");
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.SendAsync(request)).StatusCode);
+    }
+
+    [Theory]
+    [InlineData("pageSize=101")]
+    [InlineData("page=0")]
+    [InlineData("sort=description")]
+    [InlineData("status=Paid")]
+    public async Task Invalid_list_parameters_are_400(string query)
+    {
+        await using var factory = new ApiFactory();
+        using var client = ApiFactory.CreateHttpsClient(factory, TestUsers.Employee);
+        var response = await client.GetAsync($"/api/expenses?{query}");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+    }
+
+    [Fact]
+    public async Task Openapi_documents_the_expense_workflow()
+    {
+        await using var factory = new ApiFactory();
+        using var client = ApiFactory.CreateHttpsClient(factory);
+        var paths = (await client.GetFromJsonAsync<JsonElement>("/openapi/v1.json")).GetProperty("paths");
+        foreach (var path in new[] { "/api/expenses", "/api/expenses/{id}", "/api/expenses/{id}/approve", "/api/audit-events" })
+            Assert.True(paths.TryGetProperty(path, out _), $"Missing {path}");
+    }
+}
+
 public sealed class HttpHardeningTests
 {
     [Fact]

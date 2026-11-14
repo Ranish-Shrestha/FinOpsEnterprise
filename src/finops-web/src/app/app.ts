@@ -3,9 +3,11 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { finalize } from 'rxjs';
 import { FoundationService, FoundationState } from './foundation.service';
 import { AuthService } from './auth.service';
+import { Expenses } from './expenses/expenses';
 
 @Component({
   selector: 'app-root',
+  imports: [Expenses],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })

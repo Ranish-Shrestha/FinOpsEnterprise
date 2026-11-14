@@ -13,8 +13,15 @@ using Testcontainers.MsSql;
 
 namespace FinOps.IntegrationTests;
 
+/// <summary>All Category=Database test classes share one SQL Server container and run sequentially.</summary>
+[CollectionDefinition(Name)]
+public sealed class SqlServerCollection : ICollectionFixture<SqlServerFixture>
+{
+    public const string Name = "SQL Server";
+}
+
 /// <summary>
-/// One disposable SQL Server per test class. The fixture applies migrations and the Development demo
+/// One disposable SQL Server for the database test collection. The fixture applies migrations and the Development demo
 /// seed exactly as a developer would (`dotnet ef database update`, then `seed-demo-data`).
 /// </summary>
 public sealed class SqlServerFixture : IAsyncLifetime
@@ -64,7 +71,8 @@ public sealed class SqlServerFixture : IAsyncLifetime
 }
 
 [Trait("Category", "Database")]
-public sealed class SqlServerTests(SqlServerFixture fixture) : IClassFixture<SqlServerFixture>
+[Collection(SqlServerCollection.Name)]
+public sealed class SqlServerTests(SqlServerFixture fixture)
 {
     private HttpClient Client(DemoPersona persona) =>
         ApiFactory.CreateHttpsClient(fixture.Factory, persona.EntraObjectId.ToString());
