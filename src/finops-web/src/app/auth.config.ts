@@ -11,8 +11,10 @@ export const authConfig = {
   // The API trusts the mock header only in Development; these IDs mean nothing anywhere else.
   mockPersonas: [
     { objectId: '20000000-0000-0000-0000-000000000001', label: 'Demo Employee (Engineering)' },
+    { objectId: '20000000-0000-0000-0000-000000000006', label: 'Demo Engineering Manager (approves Engineering)' },
+    { objectId: '20000000-0000-0000-0000-000000000005', label: 'Demo Finance Officer (posts approved expenses)' },
     { objectId: '20000000-0000-0000-0000-000000000002', label: 'Demo Manager (Finance)' },
-    { objectId: '20000000-0000-0000-0000-000000000003', label: 'Demo Administrator (all departments)' },
+    { objectId: '20000000-0000-0000-0000-000000000003', label: 'Demo Administrator (reads all, audit)' },
     { objectId: '20000000-0000-0000-0000-000000000004', label: 'Demo Former Employee (inactive)' },
   ] satisfies readonly MockPersona[],
 };

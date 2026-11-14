@@ -1,5 +1,7 @@
-using FinOps.Domain.Organization;
+using FinOps.Domain.Audit;
+using FinOps.Domain.Expenses;
 using FinOps.Domain.Identity;
+using FinOps.Domain.Organization;
 using Microsoft.EntityFrameworkCore;
 
 namespace FinOps.Infrastructure.Persistence;
@@ -13,6 +15,10 @@ public sealed class FinOpsDbContext(DbContextOptions<FinOpsDbContext> options) :
     public DbSet<UserRole> UserRoles => Set<UserRole>();
     public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
     public DbSet<DepartmentMembership> DepartmentMemberships => Set<DepartmentMembership>();
+    public DbSet<ExpenseRequest> ExpenseRequests => Set<ExpenseRequest>();
+    public DbSet<ApprovalDecision> ApprovalDecisions => Set<ApprovalDecision>();
+    public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder) =>
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(FinOpsDbContext).Assembly);
 }

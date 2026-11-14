@@ -31,6 +31,49 @@ Pop-Location
 
 ---
 
+## 2026-11-14: Phase 3a, expense workflow
+
+Scope: [design/phase3-expenses.md](design/phase3-expenses.md) (round 3a). Branch `phase-3-expenses`.
+
+| Check | Result |
+| --- | --- |
+| .NET build (Release) | Passed; 0 warnings, 0 errors |
+| Unit tests | **101 passed**. Includes all 48 action-by-state cells of the state machine, money and date rules, separation of duties, the access policy, ETag parsing and sort parsing |
+| HTTP and model tests | **29 passed**. Adds expense 401, 428 before database work, 403 without the approve permission, 400 for invalid paging, sort and status, and the OpenAPI contract |
+| Real SQL Server tests | **30 passed**, in one shared container. Adds 15 workflow tests and 6 validation cases |
+| EF model vs migrations | No pending model changes (migration `ExpenseWorkflow`) |
+| Angular typecheck / tests / build | Passed / **17 passed** / 206.8 kB raw, 59.6 kB transferred |
+| `npm audit --omit=dev` | 0 vulnerabilities |
+
+**Total: 177 automated tests passing.**
+
+What the real-SQL tests establish:
+
+- **Full lifecycle:** employee → engineering manager → finance officer, with four audit rows in order.
+- **Separation of duties:** a manager cannot approve their own expense, and finance cannot post their own. Both return 403 and are audited as `Denied`.
+- **Visibility:**
+  - A manager of another department gets **404**, not 403.
+  - An employee cannot read a colleague's expense, even in the same department.
+  - A random ID behaves exactly like an invisible one.
+- **Permissions:** the employee and the administrator cannot approve; the administrator cannot post.
+- **Invalid transitions:** 409.
+- **Versions:** a write without `If-Match` returns 428; a stale `If-Match` returns 412.
+- **Concurrency, twice over:**
+  1. Two parallel HTTP approvals with the same ETag: exactly one 200, one 412, one decision row.
+  2. A forced race where both writers pass the in-memory check: SQL Server's rowversion guard rejects the second, and its transaction (decision plus audit) rolls back completely.
+- **Rejection:** requires a comment; revise and resubmit keep the decision history.
+- **Validation:** 400 with the field named, for amount ≤ 0, more than 2 decimals, non-USD, an unknown or numeric category, and a future date.
+- **Creation:** creating in a department you are not a member of returns 403.
+- **Lists:** visibility filtering, a department filter that never widens access, sort order, and paging limits.
+- **Audit:** the endpoint is restricted to `audit.read`, records carry correlation IDs, and no free text is stored.
+
+**Not verified:**
+
+- A manual browser walkthrough of the Expenses panel. The component tests cover role-based tabs, server-driven action buttons and the approve call.
+- The migration against your existing local database. Run `dotnet ef database update`, then `seed-demo-data`.
+
+---
+
 ## 2026-11-14: Hardening, demo-data separation and test expansion
 
 Scope: [ADR 0003](decisions/0003-hardening-and-demo-data.md).

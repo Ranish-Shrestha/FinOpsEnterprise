@@ -95,6 +95,8 @@ api.MapGet("/departments", async (CurrentUserAccess access, IDepartmentReader re
     .Produces(StatusCodes.Status401Unauthorized)
     .Produces(StatusCodes.Status403Forbidden);
 
+api.MapExpenseEndpoints();
+
 app.Run();
 return 0;
 

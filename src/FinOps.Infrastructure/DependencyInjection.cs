@@ -1,4 +1,6 @@
 using FinOps.Application.Departments;
+using FinOps.Application.Expenses;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using FinOps.Application.Identity;
 using FinOps.Infrastructure.Health;
 using FinOps.Infrastructure.Persistence;
@@ -25,6 +27,11 @@ public static class DependencyInjection
                 sql => sql.CommandTimeout(10)));
         services.AddScoped<IDepartmentReader, DepartmentReader>();
         services.AddScoped<IUserAccessReader, UserAccessReader>();
+        services.AddScoped<IExpenseStore, ExpenseStore>();
+        services.AddScoped<IExpenseReader, ExpenseReader>();
+        services.AddScoped<IAuditReader, AuditReader>();
+        services.AddScoped<ExpenseWorkflow>();
+        services.TryAddSingleton(TimeProvider.System);
         services.AddHealthChecks().AddCheck<DatabaseHealthCheck>(
             "database", tags: ["ready"], timeout: TimeSpan.FromSeconds(15));
         return services;
