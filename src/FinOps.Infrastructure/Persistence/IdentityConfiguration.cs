@@ -28,6 +28,9 @@ internal static class SyntheticIdentityIds
         [ApplicationPermissions.ExpensesApprove] = Guid.Parse("40000000-0000-0000-0000-000000000007"),
         [ApplicationPermissions.ExpensesPost] = Guid.Parse("40000000-0000-0000-0000-000000000008"),
         [ApplicationPermissions.AuditRead] = Guid.Parse("40000000-0000-0000-0000-000000000009"),
+        [ApplicationPermissions.BudgetsReadDepartment] = Guid.Parse("40000000-0000-0000-0000-00000000000a"),
+        [ApplicationPermissions.BudgetsReadAll] = Guid.Parse("40000000-0000-0000-0000-00000000000b"),
+        [ApplicationPermissions.BudgetsManage] = Guid.Parse("40000000-0000-0000-0000-00000000000c"),
     };
 
     /// <summary>
@@ -43,17 +46,20 @@ internal static class SyntheticIdentityIds
         [ManagerRole] =
         [
             ApplicationPermissions.DepartmentsRead, ApplicationPermissions.ExpensesCreate,
-            ApplicationPermissions.ExpensesReadDepartment, ApplicationPermissions.ExpensesApprove
+            ApplicationPermissions.ExpensesReadDepartment, ApplicationPermissions.ExpensesApprove,
+            ApplicationPermissions.BudgetsReadDepartment
         ],
         [FinanceOfficerRole] =
         [
             ApplicationPermissions.DepartmentsRead, ApplicationPermissions.DepartmentsReadAll,
-            ApplicationPermissions.ExpensesCreate, ApplicationPermissions.ExpensesReadAll, ApplicationPermissions.ExpensesPost
+            ApplicationPermissions.ExpensesCreate, ApplicationPermissions.ExpensesReadAll, ApplicationPermissions.ExpensesPost,
+            ApplicationPermissions.BudgetsReadAll, ApplicationPermissions.BudgetsManage
         ],
         [AdminRole] =
         [
             ApplicationPermissions.DepartmentsRead, ApplicationPermissions.DepartmentsReadAll,
-            ApplicationPermissions.UserRolesManage, ApplicationPermissions.ExpensesReadAll, ApplicationPermissions.AuditRead
+            ApplicationPermissions.UserRolesManage, ApplicationPermissions.ExpensesReadAll, ApplicationPermissions.AuditRead,
+            ApplicationPermissions.BudgetsReadAll
         ],
     };
 }

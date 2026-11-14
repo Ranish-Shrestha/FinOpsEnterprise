@@ -1,3 +1,4 @@
+using FinOps.Domain.Budgets;
 using FinOps.Domain.Expenses;
 using FinOps.Domain.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -100,7 +101,29 @@ public static class DemoDataSeeder
         }
 
         var inserted = await db.SaveChangesAsync(cancellationToken);
-        return inserted + await SeedExpensesAsync(db, cancellationToken);
+        inserted += await SeedExpensesAsync(db, cancellationToken);
+        return inserted + await SeedBudgetsAsync(db, cancellationToken);
+    }
+
+    /// <summary>Monthly budgets for the current year, sized so the sample expenses show visible utilization.</summary>
+    private static async Task<int> SeedBudgetsAsync(FinOpsDbContext db, CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var monthly = new Dictionary<Guid, decimal>
+        {
+            [EngineeringDepartment] = 1_000m,
+            [FinanceDepartment] = 1_500m,
+            [OperationsDepartment] = 2_000m,
+        };
+        var existing = await db.Budgets.Where(b => b.Year == now.Year)
+            .Select(b => new { b.DepartmentId, b.Month }).ToListAsync(cancellationToken);
+
+        foreach (var (departmentId, amount) in monthly)
+            for (var month = 1; month <= 12; month++)
+                if (!existing.Any(e => e.DepartmentId == departmentId && e.Month == month))
+                    db.Budgets.Add(Budget.Create(Guid.NewGuid(), departmentId, now.Year, month, amount, "USD", now));
+
+        return await db.SaveChangesAsync(cancellationToken);
     }
 
     /// <summary>

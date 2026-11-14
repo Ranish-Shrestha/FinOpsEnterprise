@@ -1,4 +1,5 @@
 using FinOps.Api.Security;
+using FinOps.Application.Budgets;
 using FinOps.Application.Common;
 using FinOps.Application.Expenses;
 using FinOps.Application.Identity;
@@ -116,33 +117,39 @@ internal static class ExpenseEndpoints
         return expenses;
     }
 
-    private static async Task<Actor?> ActorAsync(HttpContext http, CurrentUserAccess access) =>
+    internal static async Task<Actor?> ActorAsync(HttpContext http, CurrentUserAccess access) =>
         await access.GetAsync() is { } user
             ? new Actor(user, http.Response.Headers[HttpPipeline.CorrelationHeader].ToString())
             : null;
 
-    private static IResult? MissingIfMatch(HttpContext http) =>
+    internal static IResult? MissingIfMatch(HttpContext http) =>
         string.IsNullOrWhiteSpace(http.Request.Headers.IfMatch)
             ? Results.Problem(statusCode: StatusCodes.Status428PreconditionRequired, title: "If-Match header required",
-                detail: "Send the ETag from your last read of this expense in the If-Match header.")
+                detail: "Send the ETag from your last read of this resource in the If-Match header.")
             : null;
 
-    private static IResult ToHttp<T>(HttpContext http, Result<T> result)
+    /// <summary>Maps application results to HTTP, adding ETag and Location for versioned resources.</summary>
+    internal static IResult ToHttp<T>(HttpContext http, Result<T> result)
     {
-        if (result.Value is ExpenseDetailDto detail) http.Response.Headers.ETag = detail.Version;
+        var (etag, location) = result.Value switch
+        {
+            ExpenseDetailDto e => (e.Version, $"/api/expenses/{e.Id}"),
+            BudgetDto b => (b.Version, $"/api/budgets/{b.Id}"),
+            _ => ((string?)null, (string?)null)
+        };
+        if (etag is not null) http.Response.Headers.ETag = etag;
 
         return result.Kind switch
         {
             ResultKind.Ok => Results.Ok(result.Value),
-            ResultKind.Created when result.Value is ExpenseDetailDto created =>
-                Results.Created($"/api/expenses/{created.Id}", created),
+            ResultKind.Created when location is not null => Results.Created(location, result.Value),
             ResultKind.Created => Results.Ok(result.Value),
             ResultKind.Invalid => Results.ValidationProblem(result.Errors!),
-            ResultKind.NotFound => Results.Problem(statusCode: StatusCodes.Status404NotFound, title: "Expense not found"),
+            ResultKind.NotFound => Results.Problem(statusCode: StatusCodes.Status404NotFound, title: "Not found"),
             ResultKind.Forbidden => Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "Not allowed", detail: result.Detail),
             ResultKind.Conflict => Results.Problem(statusCode: StatusCodes.Status409Conflict, title: "Invalid state", detail: result.Detail),
             ResultKind.PreconditionFailed => Results.Problem(statusCode: StatusCodes.Status412PreconditionFailed,
-                title: "Expense was modified", detail: result.Detail),
+                title: "Modified by someone else", detail: result.Detail),
             _ => Results.Problem(statusCode: StatusCodes.Status500InternalServerError)
         };
     }

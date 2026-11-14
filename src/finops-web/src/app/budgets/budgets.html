@@ -1,0 +1,99 @@
+@if (canRead()) {
+  <section class="budgets" aria-labelledby="budgets-heading">
+    <div class="panel-header">
+      <div><p class="eyebrow">REPORTING</p><h2 id="budgets-heading">Budget vs. actual</h2></div>
+      @if (canManage()) { <button type="button" (click)="openForm()" [disabled]="busy()">Set budget</button> }
+    </div>
+    <p class="panel-description">
+      Spent = posted expenses. Committed = approved, not yet posted. Pending = submitted, shown but not subtracted.
+      Departments shown are decided by the server from your role and memberships.
+    </p>
+
+    <div class="filters">
+      <label>Year
+        <select [value]="year()" (change)="setYear($any($event.target).value)">
+          @for (y of years; track y) { <option [value]="y">{{ y }}</option> }
+        </select>
+      </label>
+      <label>Month
+        <select [value]="month() ?? ''" (change)="setMonth($any($event.target).value)">
+          <option value="">Whole year</option>
+          @for (name of monthNames; track name; let i = $index) { <option [value]="i + 1">{{ name }}</option> }
+        </select>
+      </label>
+    </div>
+
+    @if (formOpen()) {
+      <form class="budget-form" (submit)="$event.preventDefault(); save()" aria-label="Set a monthly budget">
+        <label>Department
+          <select [value]="form().departmentId" (change)="setField('departmentId', $any($event.target).value)">
+            @for (d of departments() ?? []; track d.id) { <option [value]="d.id">{{ d.name }}</option> }
+          </select>
+        </label>
+        <label>Month ({{ year() }})
+          <select [value]="form().month" (change)="setField('month', $any($event.target).value)">
+            @for (name of monthNames; track name; let i = $index) { <option [value]="i + 1">{{ name }}</option> }
+          </select>
+        </label>
+        <label>Budget (USD)
+          <input type="number" min="0.01" step="0.01" [value]="form().amount || ''" required (input)="setField('amount', $any($event.target).value)" />
+        </label>
+        <div class="actions">
+          <button type="submit" [disabled]="busy()">Save budget</button>
+          <button type="button" class="secondary" (click)="formOpen.set(false)" [disabled]="busy()">Close</button>
+        </div>
+        @if (formError()) { <p class="error" role="alert">{{ formError() }}</p> }
+      </form>
+    }
+
+    @if (loading()) {
+      <p class="empty-state" role="status">Loading report...</p>
+    } @else if (error()) {
+      <div class="empty-state" role="alert"><strong>We couldn't load the report.</strong><p>{{ error() }}</p></div>
+    } @else if (rows().length === 0) {
+      <p class="empty-state">No budgets or spending for this period.</p>
+    } @else {
+      <div class="table-wrap">
+        <table class="budget-table">
+          <caption class="visually-hidden">Budget versus actual by department and month</caption>
+          <thead>
+            <tr><th scope="col">Department</th><th scope="col">Month</th><th scope="col" class="num">Budget</th>
+              <th scope="col" class="num">Spent</th><th scope="col" class="num">Committed</th><th scope="col" class="num">Pending</th>
+              <th scope="col" class="num">Remaining</th><th scope="col">Used</th>
+              @if (canManage()) { <th scope="col"><span class="visually-hidden">Actions</span></th> }</tr>
+          </thead>
+          <tbody>
+            @for (r of rows(); track r.departmentId + '-' + r.month) {
+              <tr>
+                <td>{{ r.departmentName }}</td>
+                <td>{{ monthName(r.month) }}</td>
+                <td class="num">{{ r.budget === null ? '—' : (r.budget | currency: 'USD') }}</td>
+                <td class="num">{{ r.posted | currency: 'USD' }}</td>
+                <td class="num">{{ r.committed | currency: 'USD' }}</td>
+                <td class="num muted">{{ r.pending | currency: 'USD' }}</td>
+                <td class="num" [class.negative]="(r.remaining ?? 0) < 0">{{ r.remaining === null ? '—' : (r.remaining | currency: 'USD') }}</td>
+                <td>
+                  @if (r.utilizationPercent === null) { <span class="muted">No budget</span> }
+                  @else {
+                    <div class="meter" role="meter" aria-valuemin="0" aria-valuemax="100" [attr.aria-valuenow]="r.utilizationPercent"
+                      [attr.aria-label]="r.departmentName + ' ' + monthName(r.month) + ' budget used'">
+                      <span [class]="barClass(r)" [style.width.%]="barWidth(r)"></span>
+                    </div>
+                    <span class="pct">{{ r.utilizationPercent | number: '1.1-1' }}%</span>
+                  }
+                </td>
+                @if (canManage()) { <td><button type="button" class="secondary small" (click)="openForm(r)">Edit</button></td> }
+              </tr>
+            }
+          </tbody>
+          <tfoot>
+            <tr><th scope="row" colspan="2">Total</th><td class="num">{{ totals().budget | currency: 'USD' }}</td>
+              <td class="num">{{ totals().posted | currency: 'USD' }}</td><td class="num">{{ totals().committed | currency: 'USD' }}</td>
+              <td class="num muted">{{ totals().pending | currency: 'USD' }}</td><td colspan="2"></td>
+              @if (canManage()) { <td></td> }</tr>
+          </tfoot>
+        </table>
+      </div>
+    }
+  </section>
+}

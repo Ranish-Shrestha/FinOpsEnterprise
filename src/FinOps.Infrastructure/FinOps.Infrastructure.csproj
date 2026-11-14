@@ -5,4 +5,8 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Query-plan tests measure the exact production query builders. -->
+    <InternalsVisibleTo Include="FinOps.IntegrationTests" />
+  </ItemGroup>
 </Project>

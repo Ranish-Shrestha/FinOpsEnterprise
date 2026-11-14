@@ -24,7 +24,7 @@ The specification is coherent for a staged portfolio project. The modular monoli
 
 ## Questions for later phases
 
-- **Phase 3:** decided 2026-11-14 and recorded in [design/phase3-expenses.md](design/phase3-expenses.md). Administrators do not approve, and only USD is accepted. Round 3a (workflow, concurrency, audit) is done; round 3b (budgets, stored procedure, execution plans) remains.
+- **Phase 3:** decided 2026-11-14 and recorded in [design/phase3-expenses.md](design/phase3-expenses.md). Administrators do not approve, and only USD is accepted. Phase 3 is complete. Execution-plan evidence is in [performance/expense-queries.md](performance/expense-queries.md).
 - **Audit** shipped with the first sensitive mutation (Phase 3a), in the same transaction as each state change. Phase 5 improves delivery (outbox, Service Bus).
 - **Phase 4 (SSRS):** SSRS 2022 does not support Entra ID or OIDC sign-in natively, and it runs only on Windows, not in the Linux SQL container. Choose one design before building reports:
   1. The API renders reports through the SSRS REST or URL-access endpoint under a service account, after its own authorization. SQL row-level security, keyed on a session context set by the API, guards the data.

@@ -31,6 +31,48 @@ Pop-Location
 
 ---
 
+## 2026-11-14: Phase 3b, budgets, stored procedure and query evidence
+
+Branch `phase-3b-budgets`.
+
+| Check | Result |
+| --- | --- |
+| .NET locked restore and Release build | Passed; 0 warnings, 0 errors |
+| Unit tests | **113 passed**. Adds budget rules and budget scope |
+| HTTP and model tests | **29 passed** |
+| Real SQL Server tests | **37 passed**. Adds 6 budget and report tests, and the query-plan test over 60,000 rows |
+| EF model vs migrations | No pending model changes (migrations `CoveringExpenseIndexes`, `BudgetsAndReporting`) |
+| Angular typecheck / tests / build | Passed / **23 passed** / 220.9 kB raw, 61.9 kB transferred |
+
+**Total: 202 automated tests passing.**
+
+What the new tests establish:
+
+- **Stored procedure arithmetic is exact**, checked on a department isolated from other tests' data:
+  - Budget 400; posted 100, approved 50, submitted 25 → Remaining 250, Utilization 37.5%.
+  - Drafts, cancelled expenses and other months are excluded.
+  - Unbudgeted spend is reported with a null budget.
+- **Report scope is resolved on the server:**
+  - The Finance department's manager sees only Finance rows.
+  - The administrator sees all departments.
+  - An employee gets 403.
+  - A month or year out of range gets 400.
+- **The procedure defends itself** when called directly: malformed department JSON (including an injection attempt) → error 50003; month 13 → 50002. No data is affected.
+- **Budget management:**
+  - Finance creates a budget (201 with `Location` and `ETag`).
+  - A duplicate is 409, invalid input is 400, and an unknown department is 400.
+  - A change without `If-Match` is 428, and a stale version is 412.
+  - Both changes are audited.
+  - Managers and administrators cannot change budgets.
+- **Query plans** ([performance/expense-queries.md](performance/expense-queries.md)): list pages and the report seek their covering indexes. List pages read at least 10× fewer pages in step 1 than the Phase 3a queries (2,667 → 4, 4 and 62). The report reads at least 3× fewer than without its index (one month: 38 instead of 2,667).
+
+**Not verified:**
+
+- A manual browser walkthrough of the Budgets panel; component tests cover visibility by role, edit controls and the overspend styling.
+- Applying the new migrations to your local database. Run `dotnet ef database update`, then `seed-demo-data`, which adds the demo budgets.
+
+---
+
 ## 2026-11-14: Phase 3a, expense workflow
 
 Scope: [design/phase3-expenses.md](design/phase3-expenses.md) (round 3a). Branch `phase-3-expenses`.

@@ -12,7 +12,7 @@ A portfolio-quality internal financial operations platform: ASP.NET Core 10, Ang
 | 2. Identity and authorization | Entra OIDC/PKCE, JWT validation, app-owned roles, permissions and dated memberships, mock personas | Done; real Entra sign-in not yet verified with a tenant |
 | 2.5 Hardening | Demo data out of migrations, per-request access cache, rate limiting, security headers, CI | Done |
 | 3a. Expense workflow | Draft → submit → approve/reject → post; separation of duties; ETag concurrency; audit trail; paged API; UI | Done ([design](docs/design/phase3-expenses.md)) |
-| 3b. Budgets and SQL | Budgets, budget vs. actual, stored procedure, execution-plan evidence | Next |
+| 3b. Budgets and SQL | Monthly budgets, budget vs. actual via a stored procedure, covering indexes with execution-plan evidence | Done ([evidence](docs/performance/expense-queries.md)) |
 | 4–7 | SSRS, messaging, DevOps, Azure | Not started |
 
 Full plan: [FINOPS_ENTERPRISE_CODEX_SPEC.md](FINOPS_ENTERPRISE_CODEX_SPEC.md). What has actually been run: [docs/verification.md](docs/verification.md).
@@ -43,7 +43,8 @@ tests/
 docs/
   architecture/overview.md        Components, request lifecycle, data model
   security/identity-authorization.md  Boundaries, permissions, personas, Entra setup
-  design/phase3-expenses.md       Proposed expense workflow rules
+  design/phase3-expenses.md       Expense and budget rules (accepted)
+  performance/expense-queries.md  Execution-plan evidence, before and after
   decisions/                      ADRs 0001–0003
   requirements-review.md          Spec adjustments and open questions
   verification.md                 Dated log of what was run
@@ -150,6 +151,8 @@ In mock mode, use the **Development persona** picker:
 
 The seed data includes an expense in each state, so every view has something to show.
 
+**Budgets:** as **Demo Finance Officer**, the *Budget vs. actual* panel shows every department. Use *Set budget* or *Edit* to change a month. As **Demo Manager**, the same panel shows only Demo Finance and has no edit controls. Employees don't see the panel at all.
+
 Then stop the database with `docker compose stop sqlserver` and refresh. The API stays live, readiness reports the database is unavailable, and departments report failure. No fake data is substituted. Start it again with `docker compose up -d --wait sqlserver`.
 
 ### Starting again later
@@ -189,6 +192,10 @@ Step-by-step: [docs/security/identity-authorization.md](docs/security/identity-a
 | `POST /api/expenses/{id}/approve\|reject` | `expenses.approve`, manager of the department, not the requester, `If-Match` | Decision (`{ "comment": "..." }`; required to reject) |
 | `POST /api/expenses/{id}/post` | `expenses.post`, not the requester, `If-Match` | Post an approved expense |
 | `GET /api/audit-events` | `audit.read` | Paged audit trail, newest first |
+| `GET /api/budgets?year=` | `budgets.read.department` (own departments) or `budgets.read.all` | Monthly budgets with `version` for updates |
+| `POST /api/budgets` | `budgets.manage` | Set a department's budget for a month (409 if it exists) |
+| `PUT /api/budgets/{id}` | `budgets.manage`, `If-Match` | Change a budget amount |
+| `GET /api/reports/budget-vs-actual?year=&month=` | `budgets.read.department` or `budgets.read.all` | Budget vs. spent (posted), committed (approved) and pending (submitted), per department and month. Runs `finance.usp_BudgetVsActual` |
 
 Status codes:
 

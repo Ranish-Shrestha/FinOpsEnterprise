@@ -75,6 +75,59 @@ namespace FinOps.Infrastructure.Persistence.Migrations
                     b.ToTable("AuditEvents", "audit");
                 });
 
+            modelBuilder.Entity("FinOps.Domain.Budgets.Budget", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .IsUnicode(false)
+                        .HasColumnType("char(3)")
+                        .IsFixedLength();
+
+                    b.Property<Guid>("DepartmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Month")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("Year")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DepartmentId", "Year", "Month")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Budgets_Department_Period");
+
+                    b.ToTable("Budgets", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_Budgets_Amount_Positive", "[Amount] > 0");
+
+                            t.HasCheckConstraint("CK_Budgets_Currency_Iso", "LEN([Currency]) = 3");
+
+                            t.HasCheckConstraint("CK_Budgets_Month", "[Month] BETWEEN 1 AND 12");
+                        });
+                });
+
             modelBuilder.Entity("FinOps.Domain.Expenses.ApprovalDecision", b =>
                 {
                     b.Property<Guid>("Id")
@@ -179,13 +232,27 @@ namespace FinOps.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ExpenseDate")
+                        .HasDatabaseName("IX_ExpenseRequests_Reporting");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("ExpenseDate"), new[] { "DepartmentId", "Status", "Amount", "Currency" });
+
                     b.HasIndex("PostedById");
 
                     b.HasIndex("RequesterId", "CreatedAtUtc")
                         .HasDatabaseName("IX_ExpenseRequests_Requester");
 
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("RequesterId", "CreatedAtUtc"), new[] { "Status", "DepartmentId", "SubmittedAtUtc" });
+
+                    b.HasIndex("Status", "CreatedAtUtc")
+                        .HasDatabaseName("IX_ExpenseRequests_Status");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("Status", "CreatedAtUtc"), new[] { "DepartmentId", "RequesterId", "SubmittedAtUtc" });
+
                     b.HasIndex("DepartmentId", "Status", "SubmittedAtUtc")
                         .HasDatabaseName("IX_ExpenseRequests_ApprovalQueue");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("DepartmentId", "Status", "SubmittedAtUtc"), new[] { "RequesterId", "CreatedAtUtc" });
 
                     b.ToTable("ExpenseRequests", "finance", t =>
                         {
@@ -287,6 +354,21 @@ namespace FinOps.Infrastructure.Persistence.Migrations
                         {
                             Id = new Guid("40000000-0000-0000-0000-000000000009"),
                             Name = "audit.read"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-00000000000a"),
+                            Name = "budgets.read.department"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-00000000000b"),
+                            Name = "budgets.read.all"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-00000000000c"),
+                            Name = "budgets.manage"
                         });
                 });
 
@@ -377,6 +459,11 @@ namespace FinOps.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            RoleId = new Guid("30000000-0000-0000-0000-000000000002"),
+                            PermissionId = new Guid("40000000-0000-0000-0000-00000000000a")
+                        },
+                        new
+                        {
                             RoleId = new Guid("30000000-0000-0000-0000-000000000004"),
                             PermissionId = new Guid("40000000-0000-0000-0000-000000000001")
                         },
@@ -402,6 +489,16 @@ namespace FinOps.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            RoleId = new Guid("30000000-0000-0000-0000-000000000004"),
+                            PermissionId = new Guid("40000000-0000-0000-0000-00000000000b")
+                        },
+                        new
+                        {
+                            RoleId = new Guid("30000000-0000-0000-0000-000000000004"),
+                            PermissionId = new Guid("40000000-0000-0000-0000-00000000000c")
+                        },
+                        new
+                        {
                             RoleId = new Guid("30000000-0000-0000-0000-000000000003"),
                             PermissionId = new Guid("40000000-0000-0000-0000-000000000001")
                         },
@@ -424,6 +521,11 @@ namespace FinOps.Infrastructure.Persistence.Migrations
                         {
                             RoleId = new Guid("30000000-0000-0000-0000-000000000003"),
                             PermissionId = new Guid("40000000-0000-0000-0000-000000000009")
+                        },
+                        new
+                        {
+                            RoleId = new Guid("30000000-0000-0000-0000-000000000003"),
+                            PermissionId = new Guid("40000000-0000-0000-0000-00000000000b")
                         });
                 });
 
@@ -510,6 +612,15 @@ namespace FinOps.Infrastructure.Persistence.Migrations
                             Id = new Guid("33333333-3333-3333-3333-333333333333"),
                             Name = "Demo Operations"
                         });
+                });
+
+            modelBuilder.Entity("FinOps.Domain.Budgets.Budget", b =>
+                {
+                    b.HasOne("FinOps.Domain.Organization.Department", null)
+                        .WithMany()
+                        .HasForeignKey("DepartmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("FinOps.Domain.Expenses.ApprovalDecision", b =>

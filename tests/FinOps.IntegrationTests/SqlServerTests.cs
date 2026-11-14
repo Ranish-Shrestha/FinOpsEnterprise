@@ -35,6 +35,10 @@ public sealed class SqlServerFixture : IAsyncLifetime
         factory ?? throw new InvalidOperationException("SQL Server fixture failed to initialize; is Docker running?");
     internal int MigrationOnlyUserCount { get; private set; }
 
+    /// <summary>Connection string for another database on the same server (used by query-plan tests).</summary>
+    internal string ConnectionStringFor(string database) =>
+        new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(container.GetConnectionString()) { InitialCatalog = database }.ConnectionString;
+
     public async Task InitializeAsync()
     {
         await container.StartAsync();

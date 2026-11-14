@@ -9,7 +9,7 @@
     <nav aria-label="Main navigation"><a class="nav-current" href="/" aria-current="page">Overview <span aria-hidden="true">&#8599;</span></a></nav>
     <div class="roadmap">
       <p class="nav-label">ROADMAP</p>
-      <p>Identity &amp; access &#10003;</p><p>Expense approvals &#10003;</p><p>Budgets &amp; reporting</p>
+      <p>Identity &amp; access &#10003;</p><p>Expense approvals &#10003;</p><p>Budgets &#10003; &middot; Reports</p>
     </div>
     <div class="sidebar-note"><span class="dot"></span> Local development<span>Synthetic data only</span></div>
   </aside>
@@ -62,6 +62,7 @@
         }
       </section>
       <app-expenses [user]="state()?.user ?? null" [departments]="state()?.departments ?? null" />
+      <app-budgets [user]="state()?.user ?? null" [departments]="state()?.departments ?? null" />
       <footer><span>Built to grow, one phase at a time.</span><span>Authentication and department authorization are enforced by the API.</span></footer>
     </main>
   </div>

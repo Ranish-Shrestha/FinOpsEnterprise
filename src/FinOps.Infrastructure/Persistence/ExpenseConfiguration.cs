@@ -36,12 +36,28 @@ internal sealed class ExpenseRequestConfiguration : IEntityTypeConfiguration<Exp
         builder.HasOne<UserProfile>().WithMany().HasForeignKey(x => x.PostedById).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Department>().WithMany().HasForeignKey(x => x.DepartmentId).OnDelete(DeleteBehavior.Restrict);
 
-        // Manager approval queue: WHERE DepartmentId IN (...) AND Status = 'Submitted' ORDER BY SubmittedAtUtc.
+        // Workload indexes. Each covers the "page of IDs" query for its screen (see ExpenseQueries.PageIds),
+        // so paging reads only the narrow index; the page's rows are then fetched by primary key.
+        // Measurements: docs/performance/expense-queries.md (QueryPlanTests reproduces them).
+        //
+        // Manager approval queue: WHERE (DepartmentId IN (...) OR RequesterId = @me) AND Status = 'Submitted'
+        // ORDER BY SubmittedAtUtc. RequesterId is included so the OR branch needs no lookup.
         builder.HasIndex(x => new { x.DepartmentId, x.Status, x.SubmittedAtUtc })
+            .IncludeProperties(x => new { x.RequesterId, x.CreatedAtUtc })
             .HasDatabaseName("IX_ExpenseRequests_ApprovalQueue");
-        // "My expenses": WHERE RequesterId = @me ORDER BY CreatedAtUtc DESC.
+        // "My expenses": WHERE RequesterId = @me [AND Status = ...] ORDER BY CreatedAtUtc DESC.
         builder.HasIndex(x => new { x.RequesterId, x.CreatedAtUtc })
+            .IncludeProperties(x => new { x.Status, x.DepartmentId, x.SubmittedAtUtc })
             .HasDatabaseName("IX_ExpenseRequests_Requester");
+        // Status views for finance and administrators: WHERE Status = 'Approved' ORDER BY CreatedAtUtc DESC.
+        builder.HasIndex(x => new { x.Status, x.CreatedAtUtc })
+            .IncludeProperties(x => new { x.DepartmentId, x.RequesterId, x.SubmittedAtUtc })
+            .HasDatabaseName("IX_ExpenseRequests_Status");
+        // Budget-vs-actual report (finance.usp_BudgetVsActual): WHERE ExpenseDate in period, grouped by
+        // department and month. Covering, so the report never reads the wide expense rows.
+        builder.HasIndex(x => x.ExpenseDate)
+            .IncludeProperties(x => new { x.DepartmentId, x.Status, x.Amount, x.Currency })
+            .HasDatabaseName("IX_ExpenseRequests_Reporting");
     }
 }
 

@@ -4,7 +4,7 @@
 >
 > **How to use:** Open this file in VS Code and ask Codex (or another coding agent) to read it before making code changes. Work one milestone at a time. Do **not** attempt to implement the entire specification in one pass.
 >
-> **Current status (2026-11-14):** Phases 1–2 are complete, with hardening and CI added early. In Phase 3, the expense workflow (round 3a) is complete. Budgets, a stored procedure and execution-plan evidence (round 3b) are next. See §10 and [docs/verification.md](docs/verification.md).
+> **Current status (2026-11-14):** Phases 1–2 are complete, with hardening and CI added early. Phase 3 is complete: the expense workflow, budgets, the budget-vs-actual stored procedure, and execution-plan evidence. Phase 4 (reporting) is next; it needs a decision on report access first. See §10 and [docs/verification.md](docs/verification.md).
 
 ## 1. Product overview
 
@@ -215,10 +215,12 @@ Status key: ✅ done · 🟡 partially verified · ⬜ not started.
 - **Done when:** Valid users can sign in; permission and cross-department access tests pass.
 - *Status:* access tests pass against real SQL Server; a real Entra sign-in still needs to be verified with a tenant. Hardening and CI were pulled forward from Phase 6 (ADR 0003).
 
-### Phase 3 — Finance workflows + SQL (Weeks 4–5) 🟡
+### Phase 3 — Finance workflows + SQL (Weeks 4–5) ✅
 - Expense CRUD, submission, approvals, budget tracking, migrations, LINQ, stored procedures, indexes.
 - Audit events for every state change ship **in this phase**, in the same transaction as the change.
-- *Status:* round 3a is done: the expense lifecycle with separation of duties, ETag concurrency proven under parallel approvals, audit, paged API and UI. Round 3b remains: budgets, budget vs. actual, a stored procedure, and index and execution-plan evidence.
+- *Status:* done.
+  - **Round 3a:** the expense lifecycle with separation of duties, ETag concurrency proven under parallel approvals, audit, paged API and UI.
+  - **Round 3b:** monthly budgets, the parameterized stored procedure `finance.usp_BudgetVsActual`, and covering indexes. Measured list pages went from 2,667 logical reads to about 110–167; the plan test enforces this in CI.
 - **Done when:** A complete expense lifecycle works correctly under concurrent requests and access restrictions.
 
 ### Phase 4 — SSRS (Week 6) ⬜
@@ -259,7 +261,7 @@ When acting on this repository:
 
 ## 12. Next instruction to paste into Codex
 
-> Read `FINOPS_ENTERPRISE_CODEX_SPEC.md`, `README.md`, `docs/requirements-review.md` and `docs/design/phase3-expenses.md`, and examine the repository. Start **Phase 3 only**. First list any *Decision needed* items in the design that are unresolved and ask me about them. Then present a short plan: domain model and state transitions, migration, endpoints, authorization rules, audit, and the test matrix (including concurrent approval and self-approval). Implement in vertical slices (domain + API + DB + UI + tests). Run the build, all tests including `Category=Database`, and the EF drift check, and update `docs/verification.md` with exact results.
+> Read `FINOPS_ENTERPRISE_CODEX_SPEC.md`, `README.md`, `docs/requirements-review.md` and `docs/performance/expense-queries.md`, and examine the repository. Start **Phase 4 only**. First ask me which report-access design to use (the three options are in `docs/requirements-review.md`), and record the choice as an ADR. Then present a short plan for the five reports, reusing `finance.usp_BudgetVsActual` and the server-side department scope pattern. Implement in vertical slices with tests that prove cross-department isolation. Run the build, all tests including `Category=Database`, and the EF drift check, and update `docs/verification.md` with exact results.
 
 ## 13. Portfolio demonstration checklist
 
@@ -267,7 +269,7 @@ When acting on this repository:
 - [x] SSO with OAuth 2.0/OIDC and API JWT validation (Entra sign-in pending tenant verification).
 - [x] Meaningful RBAC plus department/resource-based authorization.
 - [x] Expense workflow and auditable approvals.
-- [ ] Complex EF Core/LINQ queries plus SQL optimization evidence.
+- [x] Complex EF Core/LINQ queries plus SQL optimization evidence.
 - [ ] SSRS/RDL reports with safe permissions and export.
 - [x] Automated unit, integration, and authorization tests.
 - [ ] Structured logging, monitoring, and health checks (logging + health done; monitoring pending).

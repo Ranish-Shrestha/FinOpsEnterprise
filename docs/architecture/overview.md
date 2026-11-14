@@ -57,6 +57,7 @@ sequenceDiagram
 | `identity` | `DepartmentMemberships` | Operational | Half-open date range. Check constraint `EndsAtUtc > StartsAtUtc` |
 | `finance` | `ExpenseRequests` | Operational | `decimal(19,4)`, `rowversion`, status, amount and currency check constraints, approval-queue and requester indexes. No cascade deletes |
 | `finance` | `ApprovalDecisions` | Operational, append-only | One row per approve or reject. A rejection must carry a comment (check constraint) |
+| `finance` | `Budgets` | Operational | One per department and month (unique), `rowversion`. Actuals are computed by `finance.usp_BudgetVsActual`, never stored |
 | `audit` | `AuditEvents` | Append-only | Successes and denials, with correlation ID and allow-listed JSON metadata. No foreign keys, so history outlives the rows it describes |
 
 ## Operational surface
@@ -75,7 +76,6 @@ sequenceDiagram
 
 These are not built yet. They are added in their own phases (see [the spec](../../FINOPS_ENTERPRISE_CODEX_SPEC.md)):
 
-- Budgets and budget-vs-actual reporting (Phase 3b, [design](../design/phase3-expenses.md)).
 - SSRS reporting.
 - Service Bus worker.
 - Azure deployment.

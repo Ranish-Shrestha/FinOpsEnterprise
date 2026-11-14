@@ -1,3 +1,4 @@
+using FinOps.Application.Budgets;
 using FinOps.Application.Departments;
 using FinOps.Application.Expenses;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -31,6 +32,9 @@ public static class DependencyInjection
         services.AddScoped<IExpenseReader, ExpenseReader>();
         services.AddScoped<IAuditReader, AuditReader>();
         services.AddScoped<ExpenseWorkflow>();
+        services.AddScoped<IBudgetStore, BudgetStore>();
+        services.AddScoped<IBudgetReader, BudgetReader>();
+        services.AddScoped<BudgetService>();
         services.TryAddSingleton(TimeProvider.System);
         services.AddHealthChecks().AddCheck<DatabaseHealthCheck>(
             "database", tags: ["ready"], timeout: TimeSpan.FromSeconds(15));

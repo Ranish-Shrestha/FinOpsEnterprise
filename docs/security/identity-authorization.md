@@ -33,8 +33,13 @@ Membership dates use a half-open interval, `[StartsAtUtc, EndsAtUtc)`. Both the 
 | `expenses.approve` | | Yes | | | Approve or reject expenses of your **own departments**, never your own expense |
 | `expenses.post` | | | Yes | | Post approved expenses, never your own |
 | `audit.read` | | | | Yes | `GET /api/audit-events` |
+| `budgets.read.department` | | Yes | | | Budgets and budget vs. actual for departments where you are an active member |
+| `budgets.read.all` | | | Yes | Yes | Budgets and budget vs. actual for all departments |
+| `budgets.manage` | | | Yes | | Create and change monthly budgets |
 
-**Separation of duties.** Managers approve, finance posts, and administrators manage access and read the audit trail but never approve or post money. The domain refuses any approval, rejection or posting by the expense's own requester, whatever the caller's permissions.
+**Separation of duties.** Managers approve, finance posts and sets budgets, and administrators manage access and read the audit trail but never approve, post or change money.
+
+**Report scope.** For the budget-vs-actual report, the API resolves the caller's departments and passes them to `finance.usp_BudgetVsActual` as a typed JSON-array parameter. NULL means all departments, and is sent only for `budgets.read.all`. No client-supplied department filter reaches the procedure. The procedure validates its own parameters (THROW 50001 to 50003) in case it is called outside the API. The domain refuses any approval, rejection or posting by the expense's own requester, whatever the caller's permissions.
 
 **Resource rules for expenses** (in `ExpenseAccessPolicy`, mirrored by the SQL list filter):
 

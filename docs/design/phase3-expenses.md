@@ -1,6 +1,6 @@
 # Phase 3 design: expenses and approvals
 
-Status: **accepted (2026-11-14)**. Round 3a (expense workflow) is implemented; round 3b (budgets, stored procedure, execution plans) is next.
+Status: **accepted and implemented (2026-11-14)**. Round 3a covers the expense workflow; round 3b covers budgets, the budget-vs-actual stored procedure and execution-plan evidence.
 
 This document resolves the Phase 3 questions in [requirements-review.md](../requirements-review.md), so that implementation starts from explicit rules.
 
@@ -93,7 +93,22 @@ This needs a new `FinanceOfficer` role with its own reference-data migration and
 | HTTP mapping, If-Match, Problem Details | `FinOps.Api/ExpenseEndpoints.cs` |
 | UI | `finops-web/src/app/expenses/` |
 
-## Indexes to justify with execution plans (round 3b)
+## Budgets (round 3b)
+
+- **One budget per department per calendar month** (`finance.Budgets`, unique `DepartmentId, Year, Month`), in USD. Amounts are greater than 0, at most 100,000,000, with 2 decimal places.
+- **Who can do what:** finance (`budgets.manage`) creates and changes budgets, using `If-Match` versions and an audit row (`budget.created`, `budget.updated`). Managers read their departments' budgets; finance and administrators read all.
+- **Actuals are computed, never stored,** by `finance.usp_BudgetVsActual(@Year, @Month = NULL, @DepartmentIds = NULL)`. They are counted by **expense date** (when the cost was incurred):
+  - Spent = Posted
+  - Committed = Approved
+  - Pending = Submitted, shown but not subtracted
+  - Remaining = Budget − Spent − Committed
+  - Utilization = (Spent + Committed) ÷ Budget, to one decimal place
+- **Unbudgeted spend** is reported with a null budget rather than hidden.
+- **The procedure is defined in migration `BudgetsAndReporting`.** A future change to it must ship as a new migration with a new definition, never by editing the old one.
+
+## Indexes, justified with execution plans (round 3b)
+
+Measured results and analysis are in [performance/expense-queries.md](../performance/expense-queries.md). The original plan, which the measurements revised:
 
 - `Expenses (DepartmentId, Status, SubmittedAtUtc)` for the manager queue.
 - `Expenses (RequesterId, CreatedAtUtc)` for "my expenses".

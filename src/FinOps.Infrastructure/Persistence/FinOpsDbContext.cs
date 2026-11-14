@@ -1,4 +1,5 @@
 using FinOps.Domain.Audit;
+using FinOps.Domain.Budgets;
 using FinOps.Domain.Expenses;
 using FinOps.Domain.Identity;
 using FinOps.Domain.Organization;
@@ -18,6 +19,7 @@ public sealed class FinOpsDbContext(DbContextOptions<FinOpsDbContext> options) :
     public DbSet<ExpenseRequest> ExpenseRequests => Set<ExpenseRequest>();
     public DbSet<ApprovalDecision> ApprovalDecisions => Set<ApprovalDecision>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
+    public DbSet<Budget> Budgets => Set<Budget>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) =>
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(FinOpsDbContext).Assembly);
