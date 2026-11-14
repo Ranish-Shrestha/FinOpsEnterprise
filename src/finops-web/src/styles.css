@@ -1,0 +1,4 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: Inter, "Segoe UI", Arial, sans-serif; background: #f6f7f2; color: #263b30; }
+button, a { -webkit-tap-highlight-color: transparent; }
+:focus-visible { outline: 3px solid #b88923; outline-offset: 4px; }

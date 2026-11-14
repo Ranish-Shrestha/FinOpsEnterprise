@@ -1,0 +1,17 @@
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+**/.angular/
+**/coverage/
+**/TestResults/
+.tools/
+.artifacts/
+.vs/
+.idea/
+.env
+.env.*
+!.env.example
+appsettings.Local.json
+*.user
+*.suo

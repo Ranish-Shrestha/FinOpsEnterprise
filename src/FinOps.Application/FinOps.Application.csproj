@@ -1,0 +1,3 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup><ProjectReference Include="../FinOps.Domain/FinOps.Domain.csproj" /></ItemGroup>
+</Project>

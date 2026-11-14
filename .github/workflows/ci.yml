@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  backend:
+    name: .NET build and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # Locked mode fails on lockfile drift; NuGet audit warnings fail the build (TreatWarningsAsErrors).
+      - name: Restore
+        run: dotnet restore FinOpsEnterprise.slnx --locked-mode
+
+      - name: Build
+        run: dotnet build FinOpsEnterprise.slnx --no-restore --configuration Release
+
+      - name: Unit and HTTP tests
+        run: >
+          dotnet test FinOpsEnterprise.slnx --no-build --configuration Release
+          --filter "Category!=Database" --logger "trx;LogFilePrefix=fast"
+
+      # GitHub-hosted Ubuntu runners include Docker, so Testcontainers runs a real SQL Server.
+      - name: Real SQL Server tests
+        run: >
+          dotnet test tests/FinOps.IntegrationTests --no-build --configuration Release
+          --filter "Category=Database" --logger "trx;LogFilePrefix=database"
+
+      - name: EF model matches migrations
+        env:
+          ASPNETCORE_ENVIRONMENT: Development
+          # Design-time only: the command builds the model and never connects.
+          ConnectionStrings__FinOps: Server=127.0.0.1,1;Database=DesignTime;User Id=ci;Password=unused;TrustServerCertificate=True
+        run: |
+          dotnet tool restore
+          dotnet ef migrations has-pending-model-changes \
+            --project src/FinOps.Infrastructure --startup-project src/FinOps.Api \
+            --configuration Release --no-build
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dotnet-test-results
+          path: "**/TestResults/*.trx"
+          if-no-files-found: ignore
+
+  frontend:
+    name: Angular typecheck, tests and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: src/finops-web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src/finops-web/package-lock.json
+
+      - name: Use the npm version from package.json
+        run: npm install --global "$(node -p "require('./package.json').packageManager")"
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      # Gate on what ships to browsers. Dev-tool advisories are reported but tracked separately
+      # (see docs/verification.md) because their fixes require an Angular CLI major upgrade.
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=moderate
+      - name: Full dependency audit (informational)
+        run: npm audit || true
+
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high

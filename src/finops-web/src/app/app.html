@@ -1,0 +1,67 @@
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="workspace">
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="FinOps Enterprise home">
+      <span class="brand-icon" aria-hidden="true">F</span>
+      <span>FinOps<span class="brand-subtitle">ENTERPRISE</span></span>
+    </a>
+    <p class="nav-label">WORKSPACE</p>
+    <nav aria-label="Main navigation"><a class="nav-current" href="/" aria-current="page">Overview <span aria-hidden="true">&#8599;</span></a></nav>
+    <div class="roadmap">
+      <p class="nav-label">ROADMAP</p>
+      <p>Identity &amp; access &#10003;</p><p>Expense approvals</p><p>Budgets &amp; reporting</p>
+    </div>
+    <div class="sidebar-note"><span class="dot"></span> Local development<span>Synthetic data only</span></div>
+  </aside>
+  <div class="content">
+    <header class="topbar"><span>Workspace <span class="breadcrumb">/ Overview</span></span><span class="phase-badge">PHASE 02 &nbsp; IDENTITY</span></header>
+    <main id="main">
+      <section class="intro">
+        <div><p class="eyebrow">FINANCIAL OPERATIONS, CONNECTED</p><h1>A clear starting point.</h1><p class="intro-text">Your local workspace for building reliable financial operations.</p></div>
+        <div>
+          @if (state()?.user) { <span class="breadcrumb">{{ state()?.user?.displayName }}</span> }
+          <button type="button" (click)="refresh()" [disabled]="loading()">{{ loading() ? 'Checking connections...' : 'Refresh status' }}</button>
+          @if (auth.mockMode) {
+            <label class="persona-picker">Development persona
+              <select [value]="auth.persona()" (change)="choosePersona($any($event.target).value)" [disabled]="loading()">
+                @for (persona of auth.personas; track persona.objectId) {
+                  <option [value]="persona.objectId">{{ persona.label }}</option>
+                }
+              </select>
+            </label>
+          } @else if (auth.authenticated()) {
+            <button type="button" (click)="auth.signOut()">Sign out</button>
+          } @else {
+            <button type="button" (click)="auth.signIn()">Sign in</button>
+          }
+        </div>
+      </section>
+      <section aria-labelledby="status-heading" aria-live="polite" [attr.aria-busy]="loading()">
+        <h2 id="status-heading" class="section-heading">System overview</h2>
+        <div class="status-grid">
+          <article class="status-card"><span class="card-label">APPLICATION API</span><p class="status-value" [class.healthy]="state()?.apiOnline">{{ loading() ? 'Checking' : state()?.apiOnline ? 'Connected' : 'Unavailable' }}</p><p>ASP.NET Core foundation</p></article>
+          <article class="status-card"><span class="card-label">DATABASE</span><p class="status-value" [class.healthy]="state()?.databaseReady">{{ loading() ? 'Checking' : state()?.databaseReady ? 'Ready' : 'Needs setup' }}</p><p>SQL Server &amp; initial schema</p></article>
+          <article class="status-card"><span class="card-label">IDENTITY</span><p class="status-value" [class.healthy]="state()?.user">{{ state()?.user ? 'Authorized' : 'Sign in' }}</p><p>{{ state()?.user?.roles?.join(', ') || 'No application access' }}</p></article>
+        </div>
+      </section>
+      <section class="departments" aria-labelledby="departments-heading">
+        <div class="panel-header"><div><p class="eyebrow">ORGANIZATION</p><h2 id="departments-heading">Sample departments</h2></div><span class="small-badge">DEMO DATA</span></div>
+        <p class="panel-description">Server-filtered departments from your active memberships and application permissions.</p>
+        @if (loading()) {
+          <p class="empty-state" role="status">Loading sample departments...</p>
+        } @else if (state()?.departments === null || !state()) {
+          <div class="empty-state" role="status"><strong>We couldn't load the departments.</strong><p>Start the API and SQL Server, apply the initial migration, then refresh. Setup instructions are in the project README.</p></div>
+        } @else if (state()?.departments?.length === 0) {
+          <p class="empty-state">No sample departments are available.</p>
+        } @else {
+          <ul class="department-list">
+            @for (department of state()?.departments; track department.id) {
+              <li><span class="department-icon" aria-hidden="true">{{ department.name.charAt(5) }}</span><span>{{ department.name }}</span><span class="reference-label">Reference data</span></li>
+            }
+          </ul>
+        }
+      </section>
+      <footer><span>Built to grow, one phase at a time.</span><span>Authentication and department authorization are enforced by the API.</span></footer>
+    </main>
+  </div>
+</div>
