@@ -20,7 +20,8 @@ builder.Services.AddProblemDetails(options =>
     options.CustomizeProblemDetails = context =>
         context.ProblemDetails.Extensions["traceId"] =
             Activity.Current?.Id ?? context.HttpContext.TraceIdentifier);
-builder.Services.AddOpenApi();
+builder.Services.AddFinOpsOpenApi(mockAuthentication: builder.Environment.IsDevelopment()
+    && builder.Configuration.GetValue<bool>("Security:UseDevelopmentMockAuthentication"));
 builder.Services.AddInfrastructure();
 builder.Services.AddFinOpsSecurity(builder.Configuration, builder.Environment);
 builder.Services.AddApiRateLimiting(builder.Configuration);
@@ -45,6 +46,7 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseFinOpsSwaggerUi(); // Development only; static page, so it sits before authentication.
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
@@ -61,10 +63,8 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
     ResponseWriter = WriteHealthResponse
 }).WithSummary("Readiness; verifies the current SQL Server schema.").AllowAnonymous();
 
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi().AllowAnonymous();
-}
+// Development only: the OpenAPI document that Swagger UI (/swagger) displays.
+app.MapFinOpsOpenApi();
 
 var api = app.MapGroup("/api").RequireRateLimiting(HttpPipeline.ApiRateLimitPolicy);
 

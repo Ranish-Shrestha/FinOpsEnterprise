@@ -65,6 +65,8 @@ tests/
   FinOps.IntegrationTests/ HTTP tests (doubles) + real SQL Server tests (Category=Database)
 docs/
   architecture/overview.md        Components, request lifecycle, data model
+  architecture/ui-flow.md         UI flow charts: start-up and sign-in, page sections by permission, expense lifecycle
+  api/openapi.json                OpenAPI document (kept in sync by a test)
   security/identity-authorization.md  Boundaries, permissions, personas, Entra setup
   design/phase3-expenses.md       Expense and budget rules (accepted)
   performance/expense-queries.md  Execution-plan and HTTP latency evidence, before and after
@@ -149,6 +151,8 @@ dotnet run --project src/FinOps.Api --launch-profile https
 
 Wait for `Now listening on: https://localhost:7143`. As a check, `https://localhost:7143/health` should return `{"status":"Healthy"}`.
 
+To explore the API, open **https://localhost:7143/swagger**. Choose *Authorize* and paste a persona's object ID into `X-Development-User` (the IDs are listed there), then use *Try it out*.
+
 ### 4. Start the UI (terminal 2, leave it open)
 
 ```powershell
@@ -232,7 +236,8 @@ Step-by-step: [docs/security/identity-authorization.md](docs/security/identity-a
 | --- | --- | --- |
 | `GET /health` | Anonymous | Liveness. 200 while the process runs; never touches SQL |
 | `GET /health/ready` | Anonymous | Readiness. 200 only when the migrated schema is queryable, otherwise 503 |
-| `GET /openapi/v1.json` | Anonymous, **Development only** | OpenAPI document |
+| `GET /openapi/v1.json` | Anonymous, **Development only** | OpenAPI document. A committed copy is in [docs/api/openapi.json](docs/api/openapi.json) |
+| `GET /swagger` | Anonymous, **Development only** | Swagger UI. Use *Authorize* with a persona's object ID (`X-Development-User`) or an Entra access token |
 | `GET /api/me` | Scope + provisioned active user | Profile, roles, permissions and active department IDs |
 | `GET /api/departments` | Scope + `departments.read` | Departments filtered by membership, or all with `departments.read.all` |
 | `GET /api/expenses` | Scope + provisioned user | Paged list of visible expenses. Filters: `status`, `departmentId`, `mine`, `sort` (`createdAt`, `submittedAt`, `expenseDate`, `amount`; prefix `-` for descending), `page`, `pageSize` (max 100) |
@@ -340,7 +345,7 @@ Press Ctrl+C in the API, worker and UI terminals, then run `docker compose stop`
 
 ## Design records
 
-- [Architecture overview](docs/architecture/overview.md)
+- [Architecture overview](docs/architecture/overview.md) · [UI flow](docs/architecture/ui-flow.md)
 - [ADR 0001: Foundation](docs/decisions/0001-foundation.md)
 - [ADR 0002: Entra authentication and application authorization](docs/decisions/0002-identity-authorization.md)
 - [ADR 0003: Demo data out of migrations; HTTP hardening](docs/decisions/0003-hardening-and-demo-data.md)

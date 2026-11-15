@@ -36,7 +36,9 @@ internal static partial class HttpPipeline
         headers.XContentTypeOptions = "nosniff";
         headers.XFrameOptions = "DENY";
         headers["Referrer-Policy"] = "no-referrer";
-        headers.ContentSecurityPolicy = "default-src 'none'; frame-ancestors 'none'";
+        headers.ContentSecurityPolicy = context.Request.Path.StartsWithSegments(ApiDocumentation.SwaggerPath)
+            ? ApiDocumentation.SwaggerContentSecurityPolicy
+            : "default-src 'none'; frame-ancestors 'none'";
         if (context.Request.Path.StartsWithSegments("/api"))
         {
             headers.CacheControl = "no-store";

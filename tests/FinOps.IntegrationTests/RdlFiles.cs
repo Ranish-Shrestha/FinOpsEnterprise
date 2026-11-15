@@ -9,12 +9,7 @@ internal static class RdlFiles
 
     internal sealed record Dataset(string File, string Procedure, IReadOnlyList<string> Parameters);
 
-    internal static string Directory()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "FinOpsEnterprise.slnx"))) dir = dir.Parent;
-        return Path.Combine(dir?.FullName ?? throw new InvalidOperationException("Repository root not found."), "reports", "SSRS");
-    }
+    internal static string Directory() => Path.Combine(Repository.Root, "reports", "SSRS");
 
     internal static IEnumerable<string> Paths() => System.IO.Directory.GetFiles(Directory(), "*.rdl").Order();
 
