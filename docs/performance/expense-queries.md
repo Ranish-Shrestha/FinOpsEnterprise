@@ -85,6 +85,11 @@ The final full run on the same laptop gave:
   - the report endpoint also commits its `report.exported` audit row.
 - **Why that's slow here:** on this laptop a bare one-row commit has p95 250–360 ms. SQL Server's wait statistics show `WRITELOG` and `PAGEIOLATCH` waits on Docker Desktop's virtual disk. A `SELECT 1` round trip takes under 3 ms.
 - **What was not done:** the audit write keeps full durability. No delayed durability and no fire-and-forget, just to meet a number.
+- **Confirmed with interleaved samples (Phase 7).** The first harness measured the commit baseline in a separate phase. On this disk, commit latency swings from run to run, so the two numbers weren't comparable. The harness now times a probe commit after every request. An interleaved breakdown on 2026-11-14:
+  - the no-write endpoint: p50 21.9 / p95 29.6 ms;
+  - one EF audit insert: p50 59.4 / p95 273.5 ms;
+  - the report: p50 77.8 / p95 263.0 ms. That is the query plus that one commit.
+- **Locally the result straddles the target.** Across runs, the report's p95 has been between 263 and 411 ms; the latest was 285 ms (met).
 - **What decides it:** CI. If CI misses the target as well, the owner chooses between auditing only file exports and relaxing the target.
 
 ### Outbox delivery

@@ -33,4 +33,5 @@ The specification is coherent for a staged portfolio project. The modular monoli
 
   UI report parameters alone can never enforce department isolation.
 - **Phase 6: decided 2026-11-14, [ADR 0006](decisions/0006-quality-targets-and-telemetry.md).** The targets were agreed before measuring: queue p95 < 150 ms, my expenses < 100 ms, one-month report < 300 ms (60k expenses, full HTTP stack), and outbox delivery < 3 s. CI is the reference environment. No caching was added; the measured fix was the per-request access lookup (4 queries → 1).
+- **Phase 7: decided 2026-11-14, [ADR 0007](decisions/0007-azure-deployment.md).** Container Apps with scale to zero, serverless SQL on the free offer, Static Web Apps Free, managed identity, OIDC CD. The templates and workflow are written; the owner deploys when ready. The outbox runs in the API process by default, so an idle app doesn't keep SQL awake.
 - **End-to-end tests:** done in Phase 6. Playwright runs against mock-mode personas on an isolated stack, covering the approval flow through the worker, department isolation and a report download.

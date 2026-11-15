@@ -1,0 +1,275 @@
+name: Deploy
+
+# Continuous deployment to Azure (ADR 0007). Runs after CI succeeds on main, or manually from main, and does nothing
+# until the repository variable AZURE_DEPLOY_ENABLED is 'true' (set it after the one-time setup in
+# docs/operations/deployment.md). Logs in with OpenID Connect: no Azure secret is stored in GitHub.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  gate:
+    name: Check that deployment is enabled and CI passed
+    if: >-
+      vars.AZURE_DEPLOY_ENABLED == 'true' && (
+        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+          && github.event.workflow_run.event == 'push') ||
+        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    runs-on: ubuntu-24.04
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - id: commit
+        run: echo "sha=${{ github.event.workflow_run.head_sha || github.sha }}" >> "$GITHUB_OUTPUT"
+
+  images:
+    name: Build and push images
+    needs: gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      api: ${{ steps.names.outputs.api }}
+      worker: ${{ steps.names.outputs.worker }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+
+      - id: names
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "api=ghcr.io/$owner/finops-api:${{ needs.gate.outputs.sha }}" >> "$GITHUB_OUTPUT"
+          echo "worker=ghcr.io/$owner/finops-worker:${{ needs.gate.outputs.sha }}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Images are tagged with the commit SHA (immutable), with SBOM and provenance attestations.
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: api
+          push: true
+          tags: ${{ steps.names.outputs.api }}
+          sbom: true
+          provenance: mode=max
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: worker
+          push: true
+          tags: ${{ steps.names.outputs.worker }}
+          sbom: true
+          provenance: mode=max
+
+  infrastructure:
+    name: Deploy infrastructure and API
+    needs: [gate, images]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      apiUrl: ${{ steps.deploy.outputs.apiUrl }}
+      webUrl: ${{ steps.deploy.outputs.webUrl }}
+      staticWebAppName: ${{ steps.deploy.outputs.staticWebAppName }}
+      sqlServerFqdn: ${{ steps.deploy.outputs.sqlServerFqdn }}
+      databaseName: ${{ steps.deploy.outputs.databaseName }}
+      appIdentityName: ${{ steps.deploy.outputs.appIdentityName }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Bicep
+        id: deploy
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          SHA: ${{ needs.gate.outputs.sha }}
+        run: |
+          az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "finops-${SHA:0:12}" \
+            --template-file infra/main.bicep \
+            --parameters \
+              apiImage='${{ needs.images.outputs.api }}' \
+              workerImage='${{ needs.images.outputs.worker }}' \
+              deployWorker='${{ vars.DEPLOY_WORKER || 'false' }}' \
+              entraTenantId='${{ vars.ENTRA_TENANT_ID }}' \
+              apiAudience='${{ vars.ENTRA_API_AUDIENCE }}' \
+              sqlAdminLogin='${{ vars.SQL_ADMIN_NAME }}' \
+              sqlAdminObjectId='${{ vars.SQL_ADMIN_OBJECT_ID }}' \
+            --query properties.outputs --output json > outputs.json
+          for key in apiUrl webUrl staticWebAppName sqlServerFqdn databaseName appIdentityName; do
+            echo "$key=$(jq -r ".$key.value" outputs.json)" >> "$GITHUB_OUTPUT"
+          done
+
+  database:
+    name: Migrate database and grant the app's identity
+    needs: [gate, infrastructure]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Build
+        run: |
+          dotnet restore src/FinOps.Api/FinOps.Api.csproj --locked-mode
+          dotnet build src/FinOps.Api/FinOps.Api.csproj --no-restore --configuration Release
+
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # The pipeline identity is the server's Entra admin; "Active Directory Default" picks up the Azure CLI login.
+      # A 60 s connect timeout covers resuming a paused serverless database.
+      - name: Apply migrations and least-privilege grants
+        working-directory: src/FinOps.Api/bin/Release/net10.0
+        env:
+          ConnectionStrings__FinOps: >-
+            Server=tcp:${{ needs.infrastructure.outputs.sqlServerFqdn }},1433;Database=${{ needs.infrastructure.outputs.databaseName }};Authentication=Active Directory Default;Encrypt=True;Connect Timeout=60
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          IDENTITY: ${{ needs.infrastructure.outputs.appIdentityName }}
+        run: |
+          dotnet FinOps.Api.dll migrate
+          client_id=$(az identity show --resource-group "$RESOURCE_GROUP" --name "$IDENTITY" --query clientId --output tsv)
+          dotnet FinOps.Api.dll grant-app-access "$IDENTITY" "$client_id"
+
+  web:
+    name: Deploy the SPA
+    needs: [gate, infrastructure]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: src/finops-web
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src/finops-web/package-lock.json
+
+      - name: Build
+        run: |
+          npm install --global "$(node -p "require('./package.json').packageManager")"
+          npm ci
+          npm run build
+
+      # One build serves every environment: only config.json and the CSP's API origin differ.
+      - name: Write runtime configuration
+        env:
+          API_URL: ${{ needs.infrastructure.outputs.apiUrl }}
+          TENANT_ID: ${{ vars.ENTRA_TENANT_ID }}
+          SPA_CLIENT_ID: ${{ vars.ENTRA_SPA_CLIENT_ID }}
+          API_SCOPE: ${{ vars.ENTRA_API_SCOPE }}
+        run: |
+          out=dist/finops-web/browser
+          jq -n --arg api "$API_URL" --arg tenant "$TENANT_ID" --arg spa "$SPA_CLIENT_ID" --arg scope "$API_SCOPE" \
+            '{apiBaseUrl: $api, mockMode: false, tenantId: $tenant, spaClientId: $spa, apiScope: $scope}' > "$out/config.json"
+          sed -i "s|__API_ORIGIN__|$API_URL|" "$out/staticwebapp.config.json"
+          if grep -q "__API_ORIGIN__" "$out/staticwebapp.config.json"; then echo "CSP placeholder not replaced"; exit 1; fi
+          cat "$out/config.json"
+
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # Short-lived: fetched at deploy time from Azure, masked, never stored in GitHub.
+      - name: Get the Static Web App deployment token
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          SWA_NAME: ${{ needs.infrastructure.outputs.staticWebAppName }}
+        run: |
+          token=$(az staticwebapp secrets list --name "$SWA_NAME" --resource-group "$RESOURCE_GROUP" --query properties.apiKey --output tsv)
+          echo "::add-mask::$token"
+          echo "SWA_TOKEN=$token" >> "$GITHUB_ENV"
+
+      - uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ env.SWA_TOKEN }}
+          action: upload
+          app_location: src/finops-web/dist/finops-web/browser
+          skip_app_build: true
+          skip_api_build: true
+
+  smoke:
+    name: Smoke test
+    needs: [infrastructure, database, web]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      API_URL: ${{ needs.infrastructure.outputs.apiUrl }}
+      WEB_URL: ${{ needs.infrastructure.outputs.webUrl }}
+    steps:
+      # Allow for scale-from-zero and a paused serverless database to resume.
+      - name: API is live and the database is reachable
+        run: |
+          for path in /health /health/ready; do
+            for attempt in $(seq 1 30); do
+              code=$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 70 "$API_URL$path" || true)
+              [ "$code" = "200" ] && echo "$path: 200" && break
+              echo "$path: $code (attempt $attempt)"; sleep 10
+            done
+            [ "$code" = "200" ] || exit 1
+          done
+
+      - name: API refuses anonymous business calls
+        run: test "$(curl --silent --output /dev/null --write-out '%{http_code}' "$API_URL/api/me")" = "401"
+
+      - name: SPA serves Entra-mode configuration and security headers
+        run: |
+          curl --silent --fail "$WEB_URL/config.json" | jq -e '.mockMode == false and (.apiBaseUrl | startswith("https://"))'
+          curl --silent --head --fail "$WEB_URL/" | grep -i "^content-security-policy:.*$API_URL"

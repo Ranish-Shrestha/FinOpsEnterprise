@@ -170,6 +170,29 @@ jobs:
             src/finops-web/test-results
           if-no-files-found: ignore
 
+  deployables:
+    name: Container images and Bicep
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      # Same Dockerfile the deploy workflow pushes; built here (not pushed) so a broken image fails the PR.
+      - name: Build API and worker images
+        run: |
+          docker build --target api --tag finops-api:ci .
+          docker build --target worker --tag finops-worker:ci .
+          # The image defaults to Production, where demo identities must be refused.
+          if out=$(docker run --rm finops-api:ci seed-demo-data 2>&1); then echo "seed-demo-data must fail in Production"; exit 1; fi
+          echo "$out" | grep "available only when ASPNETCORE_ENVIRONMENT=Development"
+
+      # Compile and lint the infrastructure (infra/bicepconfig.json raises secret-handling rules to errors).
+      - name: Bicep build and lint
+        run: |
+          az bicep install
+          az bicep build --file infra/main.bicep --stdout > /dev/null
+          az bicep lint --file infra/main.bicep
+
   # Blocks pull requests that add dependencies with known high-severity vulnerabilities.
   # Requires the repository's Dependency graph (Settings → Advanced Security → Dependency graph);
   # without it this job fails with "Dependency review is not supported on this repository".

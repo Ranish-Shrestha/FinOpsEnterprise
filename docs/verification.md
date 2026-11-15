@@ -31,6 +31,53 @@ Pop-Location
 
 ---
 
+## 2026-11-14: Phase 7, Azure deployment (templates and CD) and portfolio
+
+Scope: [ADR 0007](decisions/0007-azure-deployment.md). The owner chose to write and validate the templates and CD workflow but **not deploy yet**. Worked on `main`.
+
+| Check | Result |
+| --- | --- |
+| .NET locked restore and Release build | Passed; 0 warnings, 0 errors. No new NuGet packages |
+| Unit tests | 131 passed |
+| HTTP tests (`Category!=Database`) | 46 passed. New `DeploymentHostTests`: CORS preflight and actual request for the configured origin; no grant for others or for credentials; invalid origins stop startup; the outbox runs in the API only when `Messaging:RunInApi=true` |
+| Real SQL Server tests (`Category=Database`) | 77 passed. New `DeploymentTests` (the class passed 3 more consecutive runs): the full flow (create → post, reports including Excel and audit activity, outbox admin, worker, notifications) runs as a login holding **only** the runtime grants. DELETE, audit rewrites, identity writes, CREATE TABLE and DROP PROCEDURE are refused (errors 229, 262, 3701). Grant input is validated |
+| EF model drift | None (no migration in this phase) |
+| Angular | Typecheck clean; 41 tests passed (8 new for runtime config and API-origin routing); production build 244.4 kB, which now includes `config.json` and `staticwebapp.config.json` |
+| Playwright E2E | 3 journeys passed against an isolated stack, with the SPA now loading `/config.json` at startup. The screenshots spec regenerated the 6 README images |
+| Container images (`docker build --target api/worker`) | Built. 351 MB and 349 MB after removing other platforms' native assets (from about 500 MB). They run as UID 1654 with no shell |
+| Images against a throwaway SQL Server | `migrate` applied migrations in Production. `seed-demo-data` was refused in Production and worked in Development. `grant-app-access` without a name exited 2 |
+| PDF and Excel on Linux | `GET /api/reports/expense-summary?format=pdf` returned a valid `%PDF` (33,696 bytes) and the `xlsx` a valid zip package, on the chiseled image. This closes the Phase 4 "QuestPDF on Linux" item |
+| Production-mode container | Behind simulated ingress (`X-Forwarded-Proto: https`): readiness 200 with HSTS; unknown `Host` 400; no token 401; mock header 401; CORS preflight 204 for the configured origin; in-process outbox worker started. The worker image ran as non-root |
+| `infra/sql/provision-user.sql` | Inserted a user, role and membership. A second run was idempotent; the placeholder object ID is refused |
+| `TYPE = E` user statement | The generated `CREATE USER … WITH SID = 0xFF19966F…, TYPE = E` was checked for byte order against the client ID. It can't be executed outside Azure SQL |
+
+Found and fixed during this phase:
+
+- **`EXEC()` with `QUOTENAME()`.** The grant SQL called `QUOTENAME()` inside `EXEC(...)`, which T-SQL rejects; it would have failed in the deploy pipeline. Found by `DeploymentTests`.
+- **`migrate` needed Entra settings.** It couldn't run in Production because the web host's security setup demanded Entra settings. Admin commands now use a minimal host that registers only the data layer. Found by running the image.
+- **Seed check came too late.** `seed-demo-data` checked the environment after resolving the database, so CI would have passed for the wrong reason. It now refuses first.
+- **`CREATE USER … FROM EXTERNAL PROVIDER`.** Run by a service principal, it needs Directory Readers or Graph permissions on the SQL server. Replaced with `WITH SID = <client id>, TYPE = E`.
+- **Probes and the host filter.** A host allow-list would have failed Container Apps' IP-addressed probes; the host is now filtered at ingress.
+- **Baseline measured at a different time.** The performance harness measured its commit baseline separately from the endpoints, which made "the report is commit-bound" look doubtful. Interleaved probes now confirm it (see [performance](performance/expense-queries.md#the-report-is-bound-by-one-commit-not-by-its-query)).
+
+**Final local latency run:**
+- queue p95 33.9 ms; my expenses 37.9 ms; report 285.4 ms (met this time; 263–411 ms across runs).
+- Commit probe p95 130.8 ms.
+- Outbox, earlier full run: 2.08 s.
+
+**Unexplained:** once, the first run of `DeploymentTests`' end-to-end test got a 500 on create. It did not recur in 5 later runs. The test now includes server-side errors in its failure message.
+
+Not verified (needs Azure, which was deliberately not used):
+
+- **Deployment mechanics:**
+  - the Bicep compile and lint (downloading the Bicep CLI here was blocked; the new CI `deployables` job runs it);
+  - an actual deployment, the managed-identity SQL login and `TYPE = E` user creation;
+  - the deploy workflow itself.
+- **Runtime services:** Entra sign-in end to end, the managed OpenTelemetry agent, and Static Web Apps headers.
+- **Unobserved CI:** the new `deployables` and `e2e` jobs have not run yet, and neither has the CI enforcement of the Phase 6 targets.
+
+---
+
 ## 2026-11-14: Phase 6, quality and DevOps (targets, telemetry, E2E)
 
 Scope: [ADR 0006](decisions/0006-quality-targets-and-telemetry.md). The owner confirmed the targets before measuring. Worked on `main`.

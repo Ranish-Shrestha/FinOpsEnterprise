@@ -105,6 +105,18 @@ You need an Entra tenant in which you can register applications. The free tier i
 4. **SPA configuration.** In `src/finops-web/src/app/auth.config.ts`, set `tenantId`, `spaClientId`, `apiScope` and `mockMode: false`. These values are public identifiers, not secrets.
 5. **Provision the user.** Insert a row in `identity.UserProfiles` with the user's Entra **object ID** (`oid`), not their email. Assign a role in `identity.UserRoles` and, if needed, a membership in `identity.DepartmentMemberships`. There is no admin UI yet.
 
+## Deployed database access
+
+In Azure, the API connects with a **user-assigned managed identity**. There is no SQL password: the server allows Microsoft Entra authentication only. The pipeline grants that identity only what the app uses (`DatabaseAdministration.GrantRuntimeAccessAsync`):
+
+| Schema | Rights | Why |
+| --- | --- | --- |
+| `organization`, `identity` | SELECT | Users and roles are provisioned by an operator ([infra/sql/provision-user.sql](../../infra/sql/provision-user.sql)), never by the app |
+| `finance`, `messaging` | SELECT, INSERT, UPDATE; EXECUTE (finance procedures) | The app never deletes |
+| `audit` | SELECT, INSERT; EXECUTE | The running app cannot alter or remove audit history |
+
+There is no DELETE, no DDL and no `db_owner`. `DeploymentTests` run the full business flow and the worker as a login with exactly these grants. They also check that DELETE, audit rewrites, identity writes and DDL are refused.
+
 ## Rules
 
 - Never log tokens, `Authorization` headers or client secrets. Do not enable EF sensitive-data logging.

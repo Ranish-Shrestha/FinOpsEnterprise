@@ -19,7 +19,13 @@
             "styles": [
               "src/styles.css"
             ],
-            "outputPath": "dist/finops-web"
+            "outputPath": "dist/finops-web",
+            "assets": [
+              {
+                "glob": "**/*",
+                "input": "public"
+              }
+            ]
           },
           "configurations": {
             "production": {

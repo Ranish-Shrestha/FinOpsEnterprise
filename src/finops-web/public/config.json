@@ -1,0 +1,7 @@
+{
+  "apiBaseUrl": "",
+  "mockMode": true,
+  "tenantId": "",
+  "spaClientId": "",
+  "apiScope": ""
+}

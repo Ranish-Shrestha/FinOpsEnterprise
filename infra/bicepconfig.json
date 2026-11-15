@@ -1,0 +1,15 @@
+{
+  "analyzers": {
+    "core": {
+      "enabled": true,
+      "rules": {
+        "outputs-should-not-contain-secrets": { "level": "error" },
+        "secure-secrets-in-params": { "level": "error" },
+        "no-hardcoded-env-urls": { "level": "error" },
+        "no-unused-params": { "level": "error" },
+        "no-unused-vars": { "level": "error" },
+        "use-recent-api-versions": { "level": "off" }
+      }
+    }
+  }
+}

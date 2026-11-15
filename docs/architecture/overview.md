@@ -109,9 +109,33 @@ flowchart LR
 
 Delivery is at least once; each handler's effect is committed at most once per message. See [ADR 0005](../decisions/0005-messaging-outbox.md).
 
-## Planned additions
+## Deployment (Azure)
 
-These are not built yet. They are added in their own phases (see [the spec](../../FINOPS_ENTERPRISE_CODEX_SPEC.md)):
+```mermaid
+flowchart LR
+  GH["GitHub Actions<br/>CI → Deploy (OIDC)"] -- "images (SHA tags)" --> GHCR[("GHCR")]
+  GH -- "Bicep" --> RG
+  subgraph RG["Resource group"]
+    SWA["Static Web App (Free)<br/>Angular + config.json"]
+    subgraph ENV["Container Apps environment"]
+      API["finops-api<br/>0–2 replicas<br/>+ in-process outbox"]
+    end
+    SQL[("Azure SQL serverless<br/>free offer, Entra-only")]
+    MI["Managed identity"]
+    MON["Log Analytics +<br/>App Insights"]
+  end
+  Browser -- "HTTPS" --> SWA
+  Browser -- "Bearer token, CORS" --> API
+  Browser -. "OIDC + PKCE" .-> Entra[(Entra ID)]
+  API -- "managed identity<br/>least-privilege grants" --> SQL
+  API -.- MI
+  ENV -- "OpenTelemetry agent" --> MON
+  GHCR --> API
+```
 
-- Azure Service Bus adapter for `IMessageQueue` (optional).
-- Azure deployment.
+See [ADR 0007](../decisions/0007-azure-deployment.md) and [deployment](../operations/deployment.md).
+
+## Not built
+
+- An Azure Service Bus adapter for `IMessageQueue` (optional; [ADR 0005](../decisions/0005-messaging-outbox.md)).
+- Private networking for SQL, alert rules, and an administration UI for users and roles.

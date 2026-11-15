@@ -1,7 +1,13 @@
 export interface MockPersona { readonly objectId: string; readonly label: string; }
 
+/**
+ * Browser configuration. The defaults are for local development (mock identities, API on the same origin via the
+ * dev-server proxy). Deployments replace them at startup from `/config.json` (see runtime-config.ts), so one build
+ * serves every environment. Every value here is a public identifier, never a secret.
+ */
 export const authConfig = {
-  // Set these from the Entra app registrations before switching mockMode off.
+  /** Origin of the API, for example https://finops-api.example.azurecontainerapps.io. Empty means same origin. */
+  apiBaseUrl: '',
   tenantId: 'YOUR_ENTRA_TENANT_ID',
   spaClientId: 'YOUR_SPA_CLIENT_ID',
   apiScope: 'api://YOUR_API_CLIENT_ID/FinOps.Access',

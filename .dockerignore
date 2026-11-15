@@ -1,0 +1,20 @@
+# Only src/ backend projects and the root build files are needed (see Dockerfile).
+**/bin/
+**/obj/
+**/node_modules/
+**/TestResults/
+.git/
+.github/
+.vs/
+.idea/
+.tools/
+.artifacts/
+.env
+.env.*
+docs/
+reports/
+tests/
+infra/
+src/finops-web/
+**/appsettings.Local.json
+**/*.user

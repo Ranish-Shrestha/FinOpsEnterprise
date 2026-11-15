@@ -72,6 +72,33 @@ internal static partial class HttpPipeline
         });
     }
 
+    /// <summary>
+    /// Cross-origin access for a SPA hosted elsewhere (Azure Static Web Apps). Only the configured origins
+    /// (<c>Cors:AllowedOrigins</c>), only the methods and headers the SPA uses, and no cookies: the API is called with
+    /// bearer tokens. With no origins configured, the API is same-origin only.
+    /// </summary>
+    internal static IServiceCollection AddApiCors(this IServiceCollection services, IConfiguration configuration,
+        IHostEnvironment environment)
+    {
+        var origins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+        foreach (var origin in origins)
+        {
+            var valid = Uri.TryCreate(origin, UriKind.Absolute, out var uri)
+                && string.Equals(uri.GetLeftPart(UriPartial.Authority), origin, StringComparison.OrdinalIgnoreCase)
+                && (uri.Scheme == Uri.UriSchemeHttps || environment.IsDevelopment());
+            if (!valid)
+                throw new InvalidOperationException(
+                    $"Cors:AllowedOrigins entry '{origin}' must be an origin such as https://app.example.com (https outside Development, no path).");
+        }
+
+        return services.AddCors(options => options.AddDefaultPolicy(policy => policy
+            .WithOrigins(origins)
+            .WithMethods("GET", "POST", "PUT")
+            .WithHeaders("Authorization", "Content-Type", "If-Match", CorrelationHeader, "traceparent")
+            .WithExposedHeaders("ETag", "Location", CorrelationHeader, "Content-Disposition")
+            .SetPreflightMaxAge(TimeSpan.FromMinutes(10))));
+    }
+
     [GeneratedRegex("^[A-Za-z0-9._-]{1,64}$")]
     private static partial Regex SafeCorrelationId();
 }

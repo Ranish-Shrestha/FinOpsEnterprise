@@ -7,9 +7,11 @@ using FinOps.Infrastructure;
 using FinOps.Infrastructure.Observability;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
-using FinOps.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+
+// seed-demo-data (Development), migrate, grant-app-access <identity>: one-shot commands, see AdminCommands.
+if (await AdminCommands.TryRunAsync(args) is { } exitCode) return exitCode;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -22,6 +24,9 @@ builder.Services.AddOpenApi();
 builder.Services.AddInfrastructure();
 builder.Services.AddFinOpsSecurity(builder.Configuration, builder.Environment);
 builder.Services.AddApiRateLimiting(builder.Configuration);
+builder.Services.AddApiCors(builder.Configuration, builder.Environment);
+// Scale-to-zero hosting (ADR 0007): the API drains the outbox while it is running, so nothing polls SQL when idle.
+if (builder.Configuration.GetValue<bool>("Messaging:RunInApi")) builder.Services.AddOutboxWorker();
 builder.AddFinOpsTelemetry("finops-api",
     tracing: t => t.AddAspNetCoreInstrumentation(options =>
         options.Filter = context => !context.Request.Path.StartsWithSegments("/health")),
@@ -29,24 +34,9 @@ builder.AddFinOpsTelemetry("finops-api",
 
 var app = builder.Build();
 
-// `dotnet run --project src/FinOps.Api -- seed-demo-data` inserts synthetic demo identities.
-// Development only: migrations never create users, so other environments start with no accounts.
-if (args.Contains("seed-demo-data", StringComparer.Ordinal))
-{
-    if (!app.Environment.IsDevelopment())
-    {
-        Console.Error.WriteLine("seed-demo-data is available only when ASPNETCORE_ENVIRONMENT=Development.");
-        return 1;
-    }
-
-    await using var scope = app.Services.CreateAsyncScope();
-    var inserted = await DemoDataSeeder.SeedAsync(scope.ServiceProvider.GetRequiredService<FinOpsDbContext>());
-    Console.WriteLine($"Demo data seeded: {inserted} row(s) inserted.");
-    return 0;
-}
-
 app.UseCorrelationId();
 app.UseApiSecurityHeaders();
+app.UseCors();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 if (!app.Environment.IsDevelopment())

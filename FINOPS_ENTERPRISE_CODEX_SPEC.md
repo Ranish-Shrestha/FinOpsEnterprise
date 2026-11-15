@@ -4,7 +4,7 @@
 >
 > **How to use:** Open this file in VS Code and ask Codex (or another coding agent) to read it before making code changes. Work one milestone at a time. Do **not** attempt to implement the entire specification in one pass.
 >
-> **Current status (2026-11-14):** Phases 1–2 are complete, with hardening and CI added early. Phase 3 is complete: the expense workflow, budgets, the budget-vs-actual stored procedure, and execution-plan evidence. Phase 4 (reporting) is complete. Phase 5 (reliability: transactional outbox, worker, retries, idempotency) is complete with a local queue ([ADR 0005](docs/decisions/0005-messaging-outbox.md)). Phase 6 (quality and DevOps: agreed latency targets, OpenTelemetry, Playwright E2E in CI) is complete ([ADR 0006](docs/decisions/0006-quality-targets-and-telemetry.md)). Phase 7 (Azure and portfolio) is next. See §10 and [docs/verification.md](docs/verification.md).
+> **Current status (2026-11-14):** Phases 1–2 are complete, with hardening and CI added early. Phase 3 is complete: the expense workflow, budgets, the budget-vs-actual stored procedure, and execution-plan evidence. Phase 4 (reporting) is complete. Phase 5 (reliability: transactional outbox, worker, retries, idempotency) is complete with a local queue ([ADR 0005](docs/decisions/0005-messaging-outbox.md)). Phase 6 (quality and DevOps: agreed latency targets, OpenTelemetry, Playwright E2E in CI) is complete ([ADR 0006](docs/decisions/0006-quality-targets-and-telemetry.md)). Phase 7 (Azure and portfolio) is complete except the deployment itself, which the owner chose to run later ([ADR 0007](docs/decisions/0007-azure-deployment.md)). See §10 and [docs/verification.md](docs/verification.md).
 
 ## 1. Product overview
 
@@ -252,9 +252,16 @@ Status key: ✅ done · 🟡 partially verified · ⬜ not started.
   - Playwright journeys run in a CI job.
   - Locally, the one-month report misses its 300 ms target because each durable audit commit is slow on Docker Desktop. CI will be the first measurement in the reference environment.
 
-### Phase 7 — Azure + portfolio (Weeks 11–12) ⬜
+### Phase 7 — Azure + portfolio (Weeks 11–12) ✅ (deployment pending)
 - Optional budget-aware Azure deployment, diagrams, demo data, README, screenshots, recorded walkthrough outline.
 - **Done when:** A reviewer can understand architecture, clone/run locally, and follow a working demonstration.
+- *Status:* done, see [ADR 0007](docs/decisions/0007-azure-deployment.md).
+  - Infrastructure: Dockerfile and Bicep.
+  - Pipelines: OIDC CD workflow gated on CI, plus image builds and Bicep lint in CI.
+  - App changes: runtime SPA configuration, CORS, and explicit `migrate` and `grant-app-access` commands.
+  - Least-privilege database grants, proven sufficient by tests.
+  - Docs: deployment guide, screenshots and a demo walkthrough.
+  - Not deployed yet; the owner runs the workflow after the one-time setup.
 
 The weeks are **estimates**, not strict deadlines. Work vertically and maintain a runnable project at the end of each phase.
 
@@ -277,7 +284,13 @@ When acting on this repository:
 
 ## 12. Next instruction to paste into Codex
 
-> Read `FINOPS_ENTERPRISE_CODEX_SPEC.md`, `README.md` and `docs/requirements-review.md`, and examine the repository. Start **Phase 7 only**. Work on the `main` branch. First confirm with me whether to deploy to Azure at all (cost), and if so the budget, region and services (for example Azure Container Apps for the API and worker, Azure SQL Database serverless, Static Web Apps for the UI, Key Vault, managed identity, and Application Insights or an OTLP collector), and record it as an ADR. Never hard-code secrets. Then present a short plan: infrastructure as code (Bicep), a CD workflow gated on CI, real Entra sign-in for the deployed app, a portfolio README with screenshots and a demo walkthrough. Do not create paid resources without my explicit approval.
+> All seven phases are built. Read `README.md`, `docs/verification.md` and the ADRs, and examine the repository. Work on the `main` branch. Pick up the open items recorded there, in this order, and ask me before anything that costs money:
+> 1. confirm the CI results of the Phase 6 targets and Phase 7 checks, and fix any failure;
+> 2. run the first Azure deployment with me, following `docs/operations/deployment.md`;
+> 3. verify real Entra sign-in end to end;
+> 4. add the alert rules from `docs/operations/observability.md`.
+>
+> Update `docs/verification.md` with exact results after each step.
 
 ## 13. Portfolio demonstration checklist
 
@@ -290,6 +303,6 @@ When acting on this repository:
 - [x] Automated unit, integration, and authorization tests.
 - [x] Structured logging, monitoring, and health checks (OpenTelemetry traces, metrics and logs; alerts defined but not deployed).
 - [x] Background processing and idempotency (local SQL-backed queue; Service Bus adapter optional in Phase 7).
-- [ ] Working local setup and CI/CD pipeline (local setup + CI done; CD pending).
-- [ ] Optional cloud deployment with no hard-coded secrets.
-- [ ] README explaining tradeoffs, screenshots, and demo flows.
+- [x] Working local setup and CI/CD pipeline (CD workflow written and gated; first deployment pending).
+- [x] Optional cloud deployment with no hard-coded secrets (templates and workflow; not deployed yet).
+- [x] README explaining tradeoffs, screenshots, and demo flows.

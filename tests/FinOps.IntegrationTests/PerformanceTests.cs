@@ -62,7 +62,10 @@ public sealed class PerformanceTests(SqlServerFixture fixture, ITestOutputHelper
                 $"/api/reports/budget-vs-actual?year={today.Year}&month={today.Month}", 300),
         ];
 
-        var results = await EnvironmentBaselineAsync(connectionString);
+        // The machine's own costs are sampled alongside every request (a probe after each one), not in a separate
+        // phase: this disk's commit latency swings from run to run, and only interleaved samples are comparable.
+        await using var probe = await EnvironmentProbe.OpenAsync(connectionString);
+        var results = new List<Measurement>();
         foreach (var (name, persona, url, target) in scenarios)
         {
             using var client = ApiFactory.CreateHttpsClient(api, persona.EntraObjectId.ToString());
@@ -74,11 +77,13 @@ public sealed class PerformanceTests(SqlServerFixture fixture, ITestOutputHelper
                 var started = Stopwatch.GetTimestamp();
                 await GetAsync(client, url);
                 timings.Add(Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+                await probe.SampleAsync();
             }
 
             results.Add(Summarize(name, target, timings));
         }
 
+        results.InsertRange(0, probe.Summaries());
         Report(results, "ms");
         AssertTargets(results);
     }
@@ -213,35 +218,48 @@ public sealed class PerformanceTests(SqlServerFixture fixture, ITestOutputHelper
 
     /// <summary>
     /// What this machine's SQL Server costs before any application code: a round trip, and a one-row durable commit
-    /// (transaction-log flush). Endpoints that write an audit row pay the second on every request.
+    /// (transaction-log flush). The report endpoint pays the second on every request for its audit row.
     /// </summary>
-    private static async Task<List<Measurement>> EnvironmentBaselineAsync(string connectionString)
+    private sealed class EnvironmentProbe : IAsyncDisposable
     {
-        await using var connection = new Microsoft.Data.SqlClient.SqlConnection(connectionString);
-        await connection.OpenAsync();
-        async Task<Measurement> Time(string name, string sql)
-        {
-            await using var command = new Microsoft.Data.SqlClient.SqlCommand(sql, connection);
-            for (var i = 0; i < Warmup; i++) await command.ExecuteNonQueryAsync();
-            var timings = new List<double>(Samples);
-            for (var i = 0; i < Samples; i++)
-            {
-                var started = Stopwatch.GetTimestamp();
-                await command.ExecuteNonQueryAsync();
-                timings.Add(Stopwatch.GetElapsedTime(started).TotalMilliseconds);
-            }
+        private readonly Microsoft.Data.SqlClient.SqlConnection connection;
+        private readonly List<double> roundTrips = [];
+        private readonly List<double> commits = [];
 
-            return Summarize(name, null, timings);
+        private EnvironmentProbe(Microsoft.Data.SqlClient.SqlConnection connection) => this.connection = connection;
+
+        public static async Task<EnvironmentProbe> OpenAsync(string connectionString)
+        {
+            var connection = new Microsoft.Data.SqlClient.SqlConnection(connectionString);
+            await connection.OpenAsync();
+            await using var create = new Microsoft.Data.SqlClient.SqlCommand(
+                "IF OBJECT_ID('dbo.PerfProbe') IS NULL CREATE TABLE dbo.PerfProbe (Id bigint IDENTITY PRIMARY KEY, At datetime2 NOT NULL);",
+                connection);
+            await create.ExecuteNonQueryAsync();
+            return new EnvironmentProbe(connection);
         }
 
-        await using (var create = new Microsoft.Data.SqlClient.SqlCommand(
-            "IF OBJECT_ID('dbo.PerfProbe') IS NULL CREATE TABLE dbo.PerfProbe (Id bigint IDENTITY PRIMARY KEY, At datetime2 NOT NULL);",
-            connection)) await create.ExecuteNonQueryAsync();
-        return
+        public async Task SampleAsync()
+        {
+            roundTrips.Add(await TimeAsync("SELECT 1;"));
+            commits.Add(await TimeAsync("INSERT dbo.PerfProbe (At) VALUES (SYSUTCDATETIME());"));
+        }
+
+        public IEnumerable<Measurement> Summaries() =>
         [
-            await Time("Environment: SQL round trip (SELECT 1)", "SELECT 1;"),
-            await Time("Environment: one-row durable commit", "INSERT dbo.PerfProbe (At) VALUES (SYSUTCDATETIME());"),
+            Summarize("Environment: SQL round trip (SELECT 1)", null, roundTrips),
+            Summarize("Environment: one-row durable commit", null, commits),
         ];
+
+        private async Task<double> TimeAsync(string sql)
+        {
+            await using var command = new Microsoft.Data.SqlClient.SqlCommand(sql, connection);
+            var started = Stopwatch.GetTimestamp();
+            await command.ExecuteNonQueryAsync();
+            return Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+        }
+
+        public ValueTask DisposeAsync() => connection.DisposeAsync();
     }
 
     internal static Measurement Summarize(string scenario, double? target, IReadOnlyCollection<double> timings)
