@@ -1,6 +1,7 @@
 using FinOps.Application.Common;
 using FinOps.Domain.Audit;
 using FinOps.Domain.Expenses;
+using FinOps.Domain.Messaging;
 
 namespace FinOps.Application.Expenses;
 
@@ -22,7 +23,7 @@ public sealed record ExpenseDetailDto(Guid Id, Guid RequesterId, string Requeste
     string DepartmentName, decimal Amount, string Currency, string Category, string Description, DateOnly ExpenseDate,
     string Status, DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, DateTimeOffset? SubmittedAtUtc,
     DateTimeOffset? DecidedAtUtc, DateTimeOffset? PostedAtUtc, IReadOnlyList<ApprovalDecisionDto> Decisions,
-    IReadOnlyList<string> AllowedActions, string Version);
+    IReadOnlyList<string> AllowedActions, string Version, DateTimeOffset? ReimbursementScheduledAtUtc = null);
 
 public sealed record ExpenseListQuery(string? Status = null, Guid? DepartmentId = null, bool Mine = false,
     int Page = 1, int PageSize = Paging.DefaultPageSize, string? Sort = null);
@@ -68,6 +69,7 @@ public interface IExpenseStore
     void Add(ExpenseRequest expense);
     void Add(ApprovalDecision decision);
     void Add(AuditEvent auditEvent);
+    void Add(OutboxMessage message);
 
     /// <summary>
     /// Saves pending changes. When <paramref name="expectedVersion"/> is given, the update succeeds only if the

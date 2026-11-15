@@ -4,7 +4,7 @@
 >
 > **How to use:** Open this file in VS Code and ask Codex (or another coding agent) to read it before making code changes. Work one milestone at a time. Do **not** attempt to implement the entire specification in one pass.
 >
-> **Current status (2026-11-14):** Phases 1–2 are complete, with hardening and CI added early. Phase 3 is complete: the expense workflow, budgets, the budget-vs-actual stored procedure, and execution-plan evidence. Phase 4 (reporting) is complete. Phase 5 (reliability: messaging, worker, idempotency) is next. See §10 and [docs/verification.md](docs/verification.md).
+> **Current status (2026-11-14):** Phases 1–2 are complete, with hardening and CI added early. Phase 3 is complete: the expense workflow, budgets, the budget-vs-actual stored procedure, and execution-plan evidence. Phase 4 (reporting) is complete. Phase 5 (reliability: transactional outbox, worker, retries, idempotency) is complete with a local queue ([ADR 0005](docs/decisions/0005-messaging-outbox.md)). Phase 6 (quality and DevOps) is next. See §10 and [docs/verification.md](docs/verification.md).
 
 ## 1. Product overview
 
@@ -232,9 +232,15 @@ Status key: ✅ done · 🟡 partially verified · ⬜ not started.
 - Build five RDL reports and provide a documented way to access them securely.
 - **Done when:** Authorized test users can run parameterized reports and export PDF/Excel; access boundaries are verified.
 
-### Phase 5 — Reliability (Weeks 7–8) ⬜
+### Phase 5 — Reliability (Weeks 7–8) ✅
 - Service Bus, worker, audit trail, retries, and idempotency.
 - **Done when:** Event processing survives retries without duplicate business effects.
+- *Status:* done, see [ADR 0005](docs/decisions/0005-messaging-outbox.md).
+  - Transactional outbox, written in the same transaction as approve, reject and post.
+  - `FinOps.Worker` with leases, exponential retries, dead-lettering and audited admin replay.
+  - Idempotent handlers: notifications, and exactly one reimbursement per posted expense.
+  - Tests against real SQL Server cover redelivery, partial failure, lease expiry and concurrent workers.
+  - Uses a local SQL-backed queue behind a Service Bus-shaped port; no Azure Service Bus adapter yet.
 
 ### Phase 6 — Quality + DevOps (Weeks 9–10) ⬜
 - E2E tests, telemetry (OpenTelemetry), performance work against **measured targets** (define e.g. p95 latency for the expense queue at a stated row count first). Basic CI already exists.
@@ -265,7 +271,7 @@ When acting on this repository:
 
 ## 12. Next instruction to paste into Codex
 
-> Read `FINOPS_ENTERPRISE_CODEX_SPEC.md`, `README.md` and `docs/requirements-review.md`, and examine the repository. Start **Phase 5 only**. Work on the `main` branch. First ask me whether to use Azure Service Bus (needs an Azure subscription; cost) or a local substitute for development, and record the choice as an ADR. Then present a short plan: business events (for example `ExpenseApproved`), a transactional outbox written in the same transaction as the state change, a worker with retries, idempotent handling and dead-lettering, and tests proving no duplicate business effects under retries. Run all tests including `Category=Database`, and update `docs/verification.md` with exact results.
+> Read `FINOPS_ENTERPRISE_CODEX_SPEC.md`, `README.md` and `docs/requirements-review.md`, and examine the repository. Start **Phase 6 only**. Work on the `main` branch. First propose measurable targets (for example p95 latency of `GET /api/expenses?status=Submitted` at a stated row count, and outbox delivery latency) and ask me to confirm them. Then present a short plan: Playwright end-to-end tests against mock-mode personas (approval flow first) running in CI, OpenTelemetry traces and metrics for the API and the worker (including outbox backlog and dead-letter counts), and before/after performance evidence against the agreed targets. Run all tests including `Category=Database`, and update `docs/verification.md` with exact results.
 
 ## 13. Portfolio demonstration checklist
 
@@ -277,7 +283,7 @@ When acting on this repository:
 - [x] SSRS/RDL reports with safe permissions and export (API-rendered PDF and Excel; RDL files not yet rendered on SSRS).
 - [x] Automated unit, integration, and authorization tests.
 - [ ] Structured logging, monitoring, and health checks (logging + health done; monitoring pending).
-- [ ] Background processing and idempotency.
+- [x] Background processing and idempotency (local SQL-backed queue; Service Bus adapter optional in Phase 7).
 - [ ] Working local setup and CI/CD pipeline (local setup + CI done; CD pending).
 - [ ] Optional cloud deployment with no hard-coded secrets.
 - [ ] README explaining tradeoffs, screenshots, and demo flows.

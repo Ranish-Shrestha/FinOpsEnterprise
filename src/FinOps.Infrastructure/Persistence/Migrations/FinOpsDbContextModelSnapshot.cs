@@ -272,6 +272,50 @@ namespace FinOps.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("FinOps.Domain.Expenses.Reimbursement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .IsUnicode(false)
+                        .HasColumnType("char(3)")
+                        .IsFixedLength();
+
+                    b.Property<Guid>("ExpenseRequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("PayeeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ScheduledAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("SourceMessageId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpenseRequestId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Reimbursements_Expense");
+
+                    b.HasIndex("PayeeId");
+
+                    b.ToTable("Reimbursements", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_Reimbursements_Amount_Positive", "[Amount] > 0");
+
+                            t.HasCheckConstraint("CK_Reimbursements_Currency_Iso", "LEN([Currency]) = 3");
+                        });
+                });
+
             modelBuilder.Entity("FinOps.Domain.Identity.DepartmentMembership", b =>
                 {
                     b.Property<Guid>("UserId")
@@ -385,6 +429,11 @@ namespace FinOps.Infrastructure.Persistence.Migrations
                         {
                             Id = new Guid("40000000-0000-0000-0000-00000000000e"),
                             Name = "reports.read.all"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-00000000000f"),
+                            Name = "messaging.manage"
                         });
                 });
 
@@ -557,6 +606,11 @@ namespace FinOps.Infrastructure.Persistence.Migrations
                         {
                             RoleId = new Guid("30000000-0000-0000-0000-000000000003"),
                             PermissionId = new Guid("40000000-0000-0000-0000-00000000000e")
+                        },
+                        new
+                        {
+                            RoleId = new Guid("30000000-0000-0000-0000-000000000003"),
+                            PermissionId = new Guid("40000000-0000-0000-0000-00000000000f")
                         });
                 });
 
@@ -607,6 +661,111 @@ namespace FinOps.Infrastructure.Persistence.Migrations
                     b.ToTable("UserRoles", "identity");
                 });
 
+            modelBuilder.Entity("FinOps.Domain.Messaging.OutboxMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset?>("DeadLetteredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("DeliveryCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid?>("LockToken")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("LockedUntilUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("NextAttemptAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTimeOffset?>("ProcessedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeadLetteredAtUtc")
+                        .HasDatabaseName("IX_OutboxMessages_DeadLettered")
+                        .HasFilter("[DeadLetteredAtUtc] IS NOT NULL");
+
+                    b.HasIndex("NextAttemptAtUtc")
+                        .HasDatabaseName("IX_OutboxMessages_Pending")
+                        .HasFilter("[ProcessedAtUtc] IS NULL AND [DeadLetteredAtUtc] IS NULL");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("NextAttemptAtUtc"), new[] { "LockedUntilUtc" });
+
+                    b.ToTable("OutboxMessages", "messaging", t =>
+                        {
+                            t.HasCheckConstraint("CK_OutboxMessages_SingleOutcome", "[ProcessedAtUtc] IS NULL OR [DeadLetteredAtUtc] IS NULL");
+                        });
+                });
+
+            modelBuilder.Entity("FinOps.Domain.Notifications.Notification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("ExpenseRequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(30)");
+
+                    b.Property<DateTimeOffset?>("ReadAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("SourceMessageId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpenseRequestId");
+
+                    b.HasIndex("SourceMessageId", "UserId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Notifications_Source_User");
+
+                    b.HasIndex("UserId", "CreatedAtUtc")
+                        .HasDatabaseName("IX_Notifications_Inbox");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("UserId", "CreatedAtUtc"), new[] { "ReadAtUtc" });
+
+                    b.ToTable("Notifications", "messaging");
+                });
+
             modelBuilder.Entity("FinOps.Domain.Organization.Department", b =>
                 {
                     b.Property<Guid>("Id")
@@ -643,6 +802,24 @@ namespace FinOps.Infrastructure.Persistence.Migrations
                             Id = new Guid("33333333-3333-3333-3333-333333333333"),
                             Name = "Demo Operations"
                         });
+                });
+
+            modelBuilder.Entity("FinOps.Infrastructure.Messaging.ProcessedMessage", b =>
+                {
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Handler")
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<DateTimeOffset>("ProcessedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("MessageId", "Handler");
+
+                    b.ToTable("ProcessedMessages", "messaging");
                 });
 
             modelBuilder.Entity("FinOps.Domain.Budgets.Budget", b =>
@@ -689,6 +866,21 @@ namespace FinOps.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("FinOps.Domain.Expenses.Reimbursement", b =>
+                {
+                    b.HasOne("FinOps.Domain.Expenses.ExpenseRequest", null)
+                        .WithMany()
+                        .HasForeignKey("ExpenseRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FinOps.Domain.Identity.UserProfile", null)
+                        .WithMany()
+                        .HasForeignKey("PayeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("FinOps.Domain.Identity.DepartmentMembership", b =>
                 {
                     b.HasOne("FinOps.Domain.Organization.Department", null)
@@ -731,6 +923,21 @@ namespace FinOps.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("FinOps.Domain.Notifications.Notification", b =>
+                {
+                    b.HasOne("FinOps.Domain.Expenses.ExpenseRequest", null)
+                        .WithMany()
+                        .HasForeignKey("ExpenseRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FinOps.Domain.Identity.UserProfile", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 #pragma warning restore 612, 618

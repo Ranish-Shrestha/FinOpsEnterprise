@@ -18,6 +18,8 @@ export interface ApprovalDecision { approverName: string; outcome: string; comme
 export interface ExpenseDetail extends ExpenseSummary {
   updatedAtUtc: string; decidedAtUtc: string | null; postedAtUtc: string | null;
   decisions: ApprovalDecision[]; allowedActions: ExpenseAction[]; version: string;
+  /** Set by the background worker once the posted expense's reimbursement is scheduled. */
+  reimbursementScheduledAtUtc?: string | null;
 }
 
 export interface Page<T> { items: T[]; page: number; pageSize: number; totalCount: number; }

@@ -14,7 +14,8 @@ A portfolio-quality internal financial operations platform: ASP.NET Core 10, Ang
 | 3a. Expense workflow | Draft → submit → approve/reject → post; separation of duties; ETag concurrency; audit trail; paged API; UI | Done ([design](docs/design/phase3-expenses.md)) |
 | 3b. Budgets and SQL | Monthly budgets, budget vs. actual via a stored procedure, covering indexes with execution-plan evidence | Done ([evidence](docs/performance/expense-queries.md)) |
 | 4. Reporting | Five reports from parameterized stored procedures, as an in-app preview, PDF or Excel; matching SSRS RDL files; server-side department isolation; audited exports | Done ([ADR 0004](docs/decisions/0004-report-access.md)); RDL files not rendered on a real SSRS server |
-| 5–7 | Messaging and reliability, DevOps, Azure | Not started |
+| 5. Reliability | Transactional outbox written with each approve/reject/post; background worker with leases, exponential retries, dead-lettering and admin replay; idempotent handlers (one reimbursement per posted expense, in-app notifications) | Done ([ADR 0005](docs/decisions/0005-messaging-outbox.md)); local SQL-backed queue, Azure Service Bus adapter not built |
+| 6–7 | DevOps and quality, Azure | Not started |
 
 Full plan: [FINOPS_ENTERPRISE_CODEX_SPEC.md](FINOPS_ENTERPRISE_CODEX_SPEC.md). What has actually been run: [docs/verification.md](docs/verification.md).
 
@@ -27,6 +28,7 @@ Full plan: [FINOPS_ENTERPRISE_CODEX_SPEC.md](FINOPS_ENTERPRISE_CODEX_SPEC.md). W
   - HTTP tests for the 401/403/429 matrix.
   - Real SQL Server tests through Testcontainers. EF InMemory is never used.
   - Angular component, service and interceptor tests.
+- **Reliable background processing.** Business events are written in the same transaction as the change, delivered at least once by a worker, and handled idempotently. Tests prove no duplicate effect under redelivery, partial failure, expired leases and concurrent workers.
 - **Operational basics.** Liveness and readiness, Problem Details, correlation IDs in structured logs, security headers, rate limiting, and migrations that are never applied automatically.
 
 ## Repository layout
@@ -36,7 +38,8 @@ src/
   FinOps.Api/              Composition root: endpoints, auth, middleware, health
   FinOps.Application/      Contracts (readers), DTOs, permission catalog
   FinOps.Domain/           Entities and invariants (no framework dependencies)
-  FinOps.Infrastructure/   EF Core mappings, migrations, readers, demo seeder
+  FinOps.Infrastructure/   EF Core mappings, migrations, readers, demo seeder, outbox queue and processor
+  FinOps.Worker/           Background worker host (delivers outbox messages)
   finops-web/              Angular standalone SPA
 tests/
   FinOps.UnitTests/        Domain invariants
@@ -46,7 +49,7 @@ docs/
   security/identity-authorization.md  Boundaries, permissions, personas, Entra setup
   design/phase3-expenses.md       Expense and budget rules (accepted)
   performance/expense-queries.md  Execution-plan evidence, before and after
-  decisions/                      ADRs 0001–0004
+  decisions/                      ADRs 0001–0005
   requirements-review.md          Spec adjustments and open questions
   verification.md                 Dated log of what was run
 reports/SSRS/                     RDL report definitions (generated) and deployment notes
@@ -65,13 +68,14 @@ Commands below are PowerShell. Run them **one line at a time**, from the reposit
 
 ## Quick start (mock identities)
 
-You will end up with **two terminals that stay open**, one for the API and one for the UI, while SQL Server runs in Docker in the background. Each long-running command stops when its terminal closes.
+You will end up with **three terminals that stay open**, for the API, the background worker and the UI, while SQL Server runs in Docker in the background. Each long-running command stops when its terminal closes.
 
 | Piece | Runs in | Ready when you see |
 | --- | --- | --- |
 | SQL Server | Docker (background) | `Container finops-enterprise-sqlserver-1 Healthy` |
 | API | Terminal 1 (stays open) | `Now listening on: https://localhost:7143` |
 | UI | Terminal 2 (stays open) | `Local: http://127.0.0.1:4200/` |
+| Worker | Terminal 3 (stays open) | `Outbox worker started` |
 
 ### 1. Start SQL Server (first time)
 
@@ -131,6 +135,14 @@ npm start
 
 Wait for `Local: http://127.0.0.1:4200/`, then open **http://127.0.0.1:4200**. The dev server proxies `/api` and `/health` to `https://localhost:7143`. Its `secure: false` setting exists only for the local development certificate.
 
+### 4b. Start the background worker (terminal 3, leave it open)
+
+```powershell
+dotnet run --project src/FinOps.Worker
+```
+
+It uses the same user-secret connection string as the API, and its launch profile sets `DOTNET_ENVIRONMENT=Development`. Wait for `Outbox worker started`. Without it the app still works, but notifications and reimbursements wait in the outbox until the worker runs. You can start more than one: they never claim the same message at once, and a redelivered message never repeats an effect.
+
 ### 5. Try the authorization rules
 
 In mock mode, use the **Development persona** picker:
@@ -153,6 +165,8 @@ In mock mode, use the **Development persona** picker:
 
 The seed data includes an expense in each state, so every view has something to show.
 
+**Background processing:** after the Engineering Manager approves and Finance posts, switch back to **Demo Employee** and press *Refresh* in the *Notifications* panel: "approved" and "posted" notifications appear within a couple of seconds, and the expense shows *Reimbursement: Scheduled*. Stop the worker, post another expense, and the notification waits until you start it again. As **Demo Administrator**, the panel also shows the outbox: pending and dead-lettered counts, with *Replay* for dead letters.
+
 **Reports:** in the *Reports* panel, pick a report, then use *Preview*, *PDF* or *Excel*. As **Demo Manager**, every report contains only Demo Finance, including inside the downloaded files. **Demo Administrator** also gets *Audit activity*. Employees don't see the panel.
 
 **Budgets:** as **Demo Finance Officer**, the *Budget vs. actual* panel shows every department. Use *Set budget* or *Edit* to change a month. As **Demo Manager**, the same panel shows only Demo Finance and has no edit controls. Employees don't see the panel at all.
@@ -166,6 +180,7 @@ Steps 1 and 2 are one-time setup. On later days:
 1. Start Docker Desktop, then run `docker compose up -d --wait sqlserver`.
 2. In terminal 1, start the API (step 3).
 3. In terminal 2, start the UI (step 4, without `npm ci`).
+4. In terminal 3, start the worker (step 4b).
 
 After pulling changes that add migrations, run `dotnet ef database update` (as in step 2) before starting the API.
 
@@ -200,6 +215,10 @@ Step-by-step: [docs/security/identity-authorization.md](docs/security/identity-a
 | `POST /api/budgets` | `budgets.manage` | Set a department's budget for a month (409 if it exists) |
 | `PUT /api/budgets/{id}` | `budgets.manage`, `If-Match` | Change a budget amount |
 | `GET /api/budgets/vs-actual?year=&month=` | `budgets.read.department` or `budgets.read.all` | Budget vs. spent (posted), committed (approved) and pending (submitted), per department and month, for the Budgets panel |
+| `GET /api/notifications` | Scope + provisioned user | Your newest 50 notifications and unread count. Only ever your own |
+| `POST /api/notifications/{id}/read` | Scope + provisioned user | Mark one of yours read (204, idempotent). Anyone else's is 404 |
+| `GET /api/messaging/outbox` | `messaging.manage` | Pending and dead-lettered counts and the newest dead letters (no payloads) |
+| `POST /api/messaging/outbox/{id}/replay` | `messaging.manage` | Return a dead letter to the queue with the same ID (202). Audited |
 | `GET /api/reports` | Scope + provisioned user | The reports you may run, with their parameters and formats |
 | `GET /api/reports/{key}?format=json\|pdf\|xlsx` | `reports.read.department` or `reports.read.all`; `audit.read` for `audit-activity` | Run a report: `expense-summary`, `budget-vs-actual`, `approval-aging` or `transaction-ledger` (all with `from`/`to` or `year`/`month`), or `audit-activity`. Files are `no-store` and audited |
 
@@ -244,13 +263,14 @@ Push-Location src/finops-web; npm run typecheck; npm test; npm run build; Pop-Lo
 | Every Angular spec fails with "Vitest failed to find the runner" | Windows shell reported a lowercase drive (`f:\`). Run from a terminal at `F:\...`, such as a plain PowerShell window |
 | Database tests time out creating a container | Docker was still starting or pulling the image. Run `docker pull mcr.microsoft.com/mssql/server:2022-CU28-ubuntu-22.04` once, then retry |
 | `SqlException ... error: 0 - The wait operation timed out` | `localhost` resolved to IPv6 `::1`, but Compose publishes SQL Server on IPv4 only. Use `Server=127.0.0.1,14333` in the connection string |
+| Notifications never appear after approving or posting | The worker isn't running. Start it as in step 4b. If it exits with *Configure ConnectionStrings:FinOps*, it wasn't started in Development (user secrets load only there): use `dotnet run --project src/FinOps.Worker`, or set `$env:DOTNET_ENVIRONMENT = "Development"` |
 | Every persona gets 403 | Demo data not seeded. Run `dotnet run --project src/FinOps.Api -- seed-demo-data` |
 | 401 with a real Entra token | The token is v1, or the audience doesn't match. See the Entra setup notes on `requestedAccessTokenVersion` and `Security:Audience` |
 | API exits at startup about `ConnectionStrings:FinOps` | User secret not set, or `ASPNETCORE_ENVIRONMENT` is not `Development` |
 
 ## Stopping
 
-Press Ctrl+C in the API and UI terminals, then run `docker compose stop`. `docker compose down` keeps the data volume. **Add `--volumes` only if you mean to delete the local database.**
+Press Ctrl+C in the API, worker and UI terminals, then run `docker compose stop`. `docker compose down` keeps the data volume. **Add `--volumes` only if you mean to delete the local database.**
 
 ## Design records
 
@@ -259,4 +279,5 @@ Press Ctrl+C in the API and UI terminals, then run `docker compose stop`. `docke
 - [ADR 0002: Entra authentication and application authorization](docs/decisions/0002-identity-authorization.md)
 - [ADR 0003: Demo data out of migrations; HTTP hardening](docs/decisions/0003-hardening-and-demo-data.md)
 - [ADR 0004: Report access and rendering](docs/decisions/0004-report-access.md)
+- [ADR 0005: Transactional outbox and a swappable local queue](docs/decisions/0005-messaging-outbox.md)
 - [Requirements review and open questions](docs/requirements-review.md)

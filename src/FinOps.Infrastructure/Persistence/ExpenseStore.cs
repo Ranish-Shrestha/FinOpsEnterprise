@@ -2,6 +2,7 @@ using FinOps.Application.Common;
 using FinOps.Application.Expenses;
 using FinOps.Domain.Audit;
 using FinOps.Domain.Expenses;
+using FinOps.Domain.Messaging;
 using Microsoft.EntityFrameworkCore;
 
 namespace FinOps.Infrastructure.Persistence;
@@ -14,6 +15,7 @@ internal sealed class ExpenseStore(FinOpsDbContext db) : IExpenseStore
     public void Add(ExpenseRequest expense) => db.ExpenseRequests.Add(expense);
     public void Add(ApprovalDecision decision) => db.ApprovalDecisions.Add(decision);
     public void Add(AuditEvent auditEvent) => db.AuditEvents.Add(auditEvent);
+    public void Add(OutboxMessage message) => db.OutboxMessages.Add(message);
 
     public async Task SaveChangesAsync(ExpenseRequest? expense, byte[]? expectedVersion, CancellationToken cancellationToken)
     {
@@ -145,6 +147,9 @@ internal sealed class ExpenseReader(FinOpsDbContext db) : IExpenseReader
                 select new { d, ApproverName = u.DisplayName })
             .ToListAsync(cancellationToken);
 
+        var reimbursedAt = await db.Reimbursements.AsNoTracking().Where(r => r.ExpenseRequestId == id)
+            .Select(r => (DateTimeOffset?)r.ScheduledAtUtc).SingleOrDefaultAsync(cancellationToken);
+
         var x = row.e;
         return new ExpenseDetailDto(x.Id, x.RequesterId, row.RequesterName, x.DepartmentId, row.DepartmentName,
             x.Amount, x.Currency, x.Category.ToString(), x.Description, x.ExpenseDate, x.Status.ToString(),
@@ -152,7 +157,8 @@ internal sealed class ExpenseReader(FinOpsDbContext db) : IExpenseReader
             decisions.Select(r => new ApprovalDecisionDto(r.d.ApproverId, r.ApproverName, r.d.Outcome.ToString(),
                 r.d.Comment, r.d.DecidedAtUtc)).ToList(),
             AllowedActions: [],
-            Version: ExpenseVersion.ToETag(x.RowVersion));
+            Version: ExpenseVersion.ToETag(x.RowVersion),
+            ReimbursementScheduledAtUtc: reimbursedAt);
     }
 }
 

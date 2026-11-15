@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+  <!-- Same secret store as the API, so one `dotnet user-secrets set ConnectionStrings:FinOps` serves both. -->
+  <PropertyGroup><UserSecretsId>finops-enterprise-local-development</UserSecretsId></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../FinOps.Infrastructure/FinOps.Infrastructure.csproj" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+</Project>

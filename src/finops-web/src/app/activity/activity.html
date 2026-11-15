@@ -1,0 +1,59 @@
+@if (user()) {
+  <section class="activity" aria-labelledby="activity-heading">
+    <div class="panel-header">
+      <div>
+        <p class="eyebrow">BACKGROUND PROCESSING</p>
+        <h2 id="activity-heading">Notifications
+          @if (unread() > 0) { <span class="count" [attr.aria-label]="unread() + ' unread'">{{ unread() }}</span> }
+        </h2>
+      </div>
+      <button type="button" class="secondary" (click)="load()" [disabled]="loading()">{{ loading() ? 'Loading...' : 'Refresh' }}</button>
+    </div>
+    <p class="panel-description">Delivered by the background worker from the transactional outbox, so they appear shortly after an approval, rejection or posting. Run <code>FinOps.Worker</code> next to the API.</p>
+    @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+    @if (message()) { <p class="notice" role="status">{{ message() }}</p> }
+
+    @if (notifications().length === 0 && !loading()) {
+      <p class="empty-state">No notifications yet.</p>
+    } @else {
+      <ul class="notifications">
+        @for (n of notifications(); track n.id) {
+          <li [class.unread]="!n.readAtUtc">
+            <div>
+              <strong>{{ text(n) }}</strong>
+              <span class="muted">{{ n.expenseDescription }} · {{ n.amount | currency: n.currency }} · {{ n.createdAtUtc | date: 'medium' }}</span>
+            </div>
+            @if (!n.readAtUtc) { <button type="button" class="small secondary" (click)="markRead(n)">Mark read</button> }
+          </li>
+        }
+      </ul>
+    }
+
+    @if (outbox(); as status) {
+      <div class="outbox">
+        <h3>Outbox</h3>
+        <p class="muted">{{ status.pending }} pending · {{ status.deadLettered }} dead-lettered</p>
+        @if (status.deadLetters.length > 0) {
+          <div class="table-wrap">
+            <table class="dead-letters">
+              <thead>
+                <tr><th scope="col">Type</th><th scope="col">Deliveries</th><th scope="col">Dead-lettered</th><th scope="col">Last error</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr>
+              </thead>
+              <tbody>
+                @for (d of status.deadLetters; track d.id) {
+                  <tr>
+                    <td><code>{{ d.type }}</code></td>
+                    <td class="num">{{ d.deliveryCount }}</td>
+                    <td>{{ d.deadLetteredAtUtc | date: 'medium' }}</td>
+                    <td class="error-text">{{ d.lastError }}</td>
+                    <td><button type="button" class="small" (click)="replay(d.id)">Replay</button></td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </div>
+    }
+  </section>
+}

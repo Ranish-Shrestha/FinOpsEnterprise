@@ -33,6 +33,7 @@ internal static class SyntheticIdentityIds
         [ApplicationPermissions.BudgetsManage] = Guid.Parse("40000000-0000-0000-0000-00000000000c"),
         [ApplicationPermissions.ReportsReadDepartment] = Guid.Parse("40000000-0000-0000-0000-00000000000d"),
         [ApplicationPermissions.ReportsReadAll] = Guid.Parse("40000000-0000-0000-0000-00000000000e"),
+        [ApplicationPermissions.MessagingManage] = Guid.Parse("40000000-0000-0000-0000-00000000000f"),
     };
 
     /// <summary>
@@ -61,7 +62,7 @@ internal static class SyntheticIdentityIds
         [
             ApplicationPermissions.DepartmentsRead, ApplicationPermissions.DepartmentsReadAll,
             ApplicationPermissions.UserRolesManage, ApplicationPermissions.ExpensesReadAll, ApplicationPermissions.AuditRead,
-            ApplicationPermissions.BudgetsReadAll, ApplicationPermissions.ReportsReadAll
+            ApplicationPermissions.BudgetsReadAll, ApplicationPermissions.ReportsReadAll, ApplicationPermissions.MessagingManage
         ],
     };
 }

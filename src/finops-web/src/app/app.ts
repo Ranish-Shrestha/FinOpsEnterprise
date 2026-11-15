@@ -6,10 +6,11 @@ import { AuthService } from './auth.service';
 import { Budgets } from './budgets/budgets';
 import { Expenses } from './expenses/expenses';
 import { Reports } from './reports/reports';
+import { Activity } from './activity/activity';
 
 @Component({
   selector: 'app-root',
-  imports: [Expenses, Budgets, Reports],
+  imports: [Expenses, Budgets, Reports, Activity],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })

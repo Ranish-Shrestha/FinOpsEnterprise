@@ -103,6 +103,10 @@
             <dt>Category</dt><dd>{{ e.category }}</dd>
             <dt>Expense date</dt><dd>{{ e.expenseDate | date: 'mediumDate' }}</dd>
             @if (e.postedAtUtc) { <dt>Posted</dt><dd>{{ e.postedAtUtc | date: 'medium' }}</dd> }
+            @if (e.status === 'Posted') {
+              <dt>Reimbursement</dt>
+              <dd>{{ e.reimbursementScheduledAtUtc ? 'Scheduled ' + (e.reimbursementScheduledAtUtc | date: 'medium') : 'Being scheduled by the background worker' }}</dd>
+            }
           </dl>
 
           @if (e.decisions.length > 0) {

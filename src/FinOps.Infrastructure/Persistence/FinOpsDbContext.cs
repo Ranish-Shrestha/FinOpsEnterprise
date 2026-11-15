@@ -2,6 +2,9 @@ using FinOps.Domain.Audit;
 using FinOps.Domain.Budgets;
 using FinOps.Domain.Expenses;
 using FinOps.Domain.Identity;
+using FinOps.Domain.Messaging;
+using FinOps.Domain.Notifications;
+using FinOps.Infrastructure.Messaging;
 using FinOps.Domain.Organization;
 using Microsoft.EntityFrameworkCore;
 
@@ -20,6 +23,10 @@ public sealed class FinOpsDbContext(DbContextOptions<FinOpsDbContext> options) :
     public DbSet<ApprovalDecision> ApprovalDecisions => Set<ApprovalDecision>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<Budget> Budgets => Set<Budget>();
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
+    internal DbSet<ProcessedMessage> ProcessedMessages => Set<ProcessedMessage>();
+    public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<Reimbursement> Reimbursements => Set<Reimbursement>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) =>
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(FinOpsDbContext).Assembly);

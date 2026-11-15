@@ -4,6 +4,7 @@
     <Project Path="src/FinOps.Application/FinOps.Application.csproj" />
     <Project Path="src/FinOps.Domain/FinOps.Domain.csproj" />
     <Project Path="src/FinOps.Infrastructure/FinOps.Infrastructure.csproj" />
+    <Project Path="src/FinOps.Worker/FinOps.Worker.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/FinOps.UnitTests/FinOps.UnitTests.csproj" />

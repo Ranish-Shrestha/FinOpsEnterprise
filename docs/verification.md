@@ -31,6 +31,45 @@ Pop-Location
 
 ---
 
+## 2026-11-14: Phase 5, reliability (outbox, worker, idempotency)
+
+Scope: [ADR 0005](decisions/0005-messaging-outbox.md). Broker choice: a local SQL-backed queue behind a Service Bus-shaped port, chosen by the owner over Azure Service Bus or its emulator. Worked on `main`.
+
+| Check | Result |
+| --- | --- |
+| .NET locked restore and Release build | Passed; 0 warnings, 0 errors. New project `FinOps.Worker`; no new NuGet packages |
+| Unit tests | 130 passed (11 new: retry schedule, outbox, notification and reimbursement rules, both handlers, payload contents) |
+| HTTP tests (`Category!=Database`) | 39 passed (new: outbox endpoints need `messaging.manage`; notifications need a provisioned user; OpenAPI paths) |
+| Real SQL Server tests (`Category=Database`) | 64 passed (11 new in `MessagingIntegrationTests`). The messaging class then passed **3 more consecutive runs** |
+| Mutation check | With the `ProcessedMessages` insert removed, 3 tests failed (redelivery, partial failure, lease expiry). Restored afterwards |
+| EF model drift | None after migration `MessagingOutbox` |
+| Worker host smoke test | Started against an unreachable SQL Server: options validated, `Outbox worker started` logged, each poll logged the failure and the process kept running |
+| Angular | Typecheck clean; 33 tests passed (6 new); production build 243.2 kB initial |
+
+What the database tests prove:
+
+- **Outbox atomicity.** Approve and post each write exactly one event, carrying the request's correlation ID. A stale ETag (412), a self-approval (403) and the losing request of two concurrent approvals write none.
+- **Delivery.** The worker creates the requester's notifications and exactly one reimbursement. The reimbursement is audited with no actor and the posting request's correlation ID, and the expense detail shows it.
+- **No duplicate effects:**
+  - after a lost completion (redelivery);
+  - when one handler fails after another committed (only the failed handler re-runs, after the 5 s backoff);
+  - when a lease expires mid-handler and a second worker finishes the message (the stale worker can't settle or duplicate);
+  - with four concurrent workers over eight messages plus a duplicate publication (each message delivered once, each expense paid once).
+- **Failure handling.**
+  - Backoff is 5 s, then 10 s; dead-lettering happens at the third delivery with `MaxDeliveryCount=3`.
+  - Unknown types, unreadable payloads and exhausted delivery counts are dead-lettered without retrying.
+  - Replay is administrator-only, audited, keeps the message ID, and succeeds exactly once after the fault clears.
+- **Privacy and backstops.** Notifications are private (another user's is 404), and marking read is idempotent. The database refuses a second reimbursement for one expense.
+
+Not verified:
+
+- The worker running against the local development database with the UI (no manual browser walkthrough).
+- Throughput or latency at volume.
+- Migration `Down`.
+- Any Azure Service Bus implementation, which doesn't exist.
+
+---
+
 ## 2026-11-14: Phase 4, reporting
 
 Scope: [ADR 0004](decisions/0004-report-access.md). Worked on `main`.

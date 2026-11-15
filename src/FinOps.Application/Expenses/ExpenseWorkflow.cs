@@ -1,8 +1,10 @@
 using System.Text.Json;
 using FinOps.Application.Common;
 using FinOps.Application.Identity;
+using FinOps.Application.Messaging;
 using FinOps.Domain.Audit;
 using FinOps.Domain.Expenses;
+using FinOps.Domain.Messaging;
 
 namespace FinOps.Application.Expenses;
 
@@ -12,7 +14,7 @@ public sealed record Actor(CurrentUserDto User, string? CorrelationId);
 /// <summary>
 /// Expense use cases. Every mutation follows the same order, which fixes the HTTP semantics:
 /// invisible → 404, visible but not allowed → 403, stale version → 412, wrong state → 409, bad input → 400.
-/// State change and audit row are saved in one transaction; denials are audited on their own.
+/// State change, audit row and outbox event are saved in one transaction; denials are audited on their own.
 /// </summary>
 public sealed class ExpenseWorkflow(IExpenseStore store, IExpenseReader reader, TimeProvider clock)
 {
@@ -172,6 +174,15 @@ public sealed class ExpenseWorkflow(IExpenseStore store, IExpenseReader reader, 
         if (decision is not null) store.Add(decision);
         store.Add(Audit(actor, auditAction, expense.Id, AuditOutcome.Succeeded,
             new { from = from.ToString(), to = expense.Status.ToString() }));
+        if (EventTypeFor(auditAction) is { } eventType)
+        {
+            // Transactional outbox: committed with the state change or not at all, so the worker never misses an
+            // approval and never sees one that was rolled back.
+            var now = clock.GetUtcNow();
+            var payload = new ExpenseStatusChanged(expense.Id, expense.RequesterId, expense.DepartmentId, expense.Amount,
+                expense.Currency, actor.User.Id, now);
+            store.Add(OutboxMessage.Create(Guid.NewGuid(), eventType, payload.Serialize(), actor.CorrelationId, now));
+        }
 
         try
         {
@@ -186,6 +197,14 @@ public sealed class ExpenseWorkflow(IExpenseStore store, IExpenseReader reader, 
 
         return Result<ExpenseDetailDto>.Ok((await DetailForAsync(actor.User, id, cancellationToken))!);
     }
+
+    private static string? EventTypeFor(string auditAction) => auditAction switch
+    {
+        "expense.approved" => IntegrationEventTypes.ExpenseApproved,
+        "expense.rejected" => IntegrationEventTypes.ExpenseRejected,
+        "expense.posted" => IntegrationEventTypes.ExpensePosted,
+        _ => null
+    };
 
     private async Task<ExpenseDetailDto?> DetailForAsync(CurrentUserDto user, Guid id, CancellationToken cancellationToken)
     {

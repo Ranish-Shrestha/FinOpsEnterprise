@@ -38,6 +38,7 @@ Membership dates use a half-open interval, `[StartsAtUtc, EndsAtUtc)`. Both the 
 | `budgets.manage` | | | Yes | | Create and change monthly budgets |
 | `reports.read.department` | | Yes | | | Run the four financial reports for departments where you are an active member |
 | `reports.read.all` | | | Yes | Yes | Run the four financial reports for all departments |
+| `messaging.manage` | | | | Yes | View the outbox and replay dead-lettered messages |
 
 The audit-activity report additionally requires `audit.read` (Administrator only).
 
@@ -50,6 +51,13 @@ The audit-activity report additionally requires `audit.read` (Administrator only
 - The procedures validate their own parameters (THROW 50001–50006) in case they are called outside the API.
 - Exports are audited (`report.exported`) and served with `Cache-Control: no-store`.
 - SSRS is never the boundary; see [ADR 0004](../decisions/0004-report-access.md).
+
+**Background processing.**
+
+- Notifications are read and marked read only by their recipient. The user ID comes from the server, and anyone else's notification returns 404.
+- Event payloads and notifications hold IDs and amounts, never descriptions or comments. The outbox API never returns payloads.
+- The worker's own writes (`reimbursement.scheduled`) are audited with no actor and the originating request's correlation ID.
+- Replaying a dead letter is audited (`message.replayed`). It cannot create a second reimbursement, because handlers are idempotent per message ID and the database allows one reimbursement per expense. It doesn't let an administrator move money either.
 
 **Resource rules for expenses** (in `ExpenseAccessPolicy`, mirrored by the SQL list filter):
 

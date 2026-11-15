@@ -9,12 +9,12 @@
     <nav aria-label="Main navigation"><a class="nav-current" href="/" aria-current="page">Overview <span aria-hidden="true">&#8599;</span></a></nav>
     <div class="roadmap">
       <p class="nav-label">ROADMAP</p>
-      <p>Identity &amp; access &#10003;</p><p>Expense approvals &#10003;</p><p>Budgets &amp; reports &#10003;</p>
+      <p>Identity &amp; access &#10003;</p><p>Expense approvals &#10003;</p><p>Budgets &amp; reports &#10003;</p><p>Background processing &#10003;</p>
     </div>
     <div class="sidebar-note"><span class="dot"></span> Local development<span>Synthetic data only</span></div>
   </aside>
   <div class="content">
-    <header class="topbar"><span>Workspace <span class="breadcrumb">/ Overview</span></span><span class="phase-badge">PHASE 04 &nbsp; REPORTING</span></header>
+    <header class="topbar"><span>Workspace <span class="breadcrumb">/ Overview</span></span><span class="phase-badge">PHASE 05 &nbsp; RELIABILITY</span></header>
     <main id="main">
       <section class="intro">
         <div><p class="eyebrow">FINANCIAL OPERATIONS, CONNECTED</p><h1>A clear starting point.</h1><p class="intro-text">Your local workspace for building reliable financial operations.</p></div>
@@ -61,6 +61,7 @@
           </ul>
         }
       </section>
+      <app-activity [user]="state()?.user ?? null" />
       <app-expenses [user]="state()?.user ?? null" [departments]="state()?.departments ?? null" />
       <app-budgets [user]="state()?.user ?? null" [departments]="state()?.departments ?? null" />
       <app-reports [user]="state()?.user ?? null" />

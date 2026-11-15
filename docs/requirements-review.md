@@ -10,7 +10,7 @@ The specification is coherent for a staged portfolio project. The modular monoli
 - **Models are added only when their rules are implemented.** Expense, budget, audit, outbox and reporting models do not exist yet.
 - **Migrations are explicit.** No automatic database creation runs at API startup.
 - **Demo identities are not migration data.** They come from an explicit Development-only seed command ([ADR 0003](decisions/0003-hardening-and-demo-data.md)).
-- **Local dependencies are SQL Server only.** Worker, Redis, Service Bus, SSRS and Azure resources are not scaffolded.
+- **Local dependencies are SQL Server only.** The Phase 5 worker uses the SQL outbox as its queue. Redis, Service Bus, SSRS and Azure resources are not scaffolded.
 
 ## Phase 2 questions: resolved
 
@@ -25,7 +25,7 @@ The specification is coherent for a staged portfolio project. The modular monoli
 ## Questions for later phases
 
 - **Phase 3:** decided 2026-11-14 and recorded in [design/phase3-expenses.md](design/phase3-expenses.md). Administrators do not approve, and only USD is accepted. Phase 3 is complete. Execution-plan evidence is in [performance/expense-queries.md](performance/expense-queries.md).
-- **Audit** shipped with the first sensitive mutation (Phase 3a), in the same transaction as each state change. Phase 5 improves delivery (outbox, Service Bus).
+- **Audit** shipped with the first sensitive mutation (Phase 3a), in the same transaction as each state change. Phase 5 added a transactional outbox and a worker. **Decided 2026-11-14, [ADR 0005](decisions/0005-messaging-outbox.md):** a local SQL-backed queue behind a Service Bus-shaped port instead of Azure Service Bus, to avoid cost and keep every test runnable in CI.
 - **Phase 4 (reporting): decided 2026-11-14, [ADR 0004](decisions/0004-report-access.md).** The API renders PDF and Excel from the reporting procedures and is the access boundary; RDL files ship as an optional artifact with a deny-by-default scope parameter. The options that were considered:
   1. The API renders reports through the SSRS REST or URL-access endpoint under a service account, after its own authorization. SQL row-level security, keyed on a session context set by the API, guards the data.
   2. Use Power BI Report Server, which has the same constraint.

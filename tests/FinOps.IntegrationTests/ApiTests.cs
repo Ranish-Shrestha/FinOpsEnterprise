@@ -213,13 +213,39 @@ public sealed class ExpenseContractTests
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
     }
 
+    [Theory]
+    [InlineData("GET", "/api/messaging/outbox")]
+    [InlineData("POST", "/api/messaging/outbox/00000000-0000-0000-0000-000000000001/replay")]
+    public async Task Outbox_operations_need_the_messaging_permission(string method, string path)
+    {
+        await using var factory = new ApiFactory();
+        using var client = ApiFactory.CreateHttpsClient(factory, TestUsers.Administrator);
+        var response = await client.SendAsync(new HttpRequestMessage(new HttpMethod(method), path));
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("GET", "/api/notifications")]
+    [InlineData("POST", "/api/notifications/00000000-0000-0000-0000-000000000001/read")]
+    public async Task Notifications_need_a_provisioned_user(string method, string path)
+    {
+        await using var factory = new ApiFactory();
+        using (var anonymous = ApiFactory.CreateHttpsClient(factory))
+            Assert.Equal(HttpStatusCode.Unauthorized,
+                (await anonymous.SendAsync(new HttpRequestMessage(new HttpMethod(method), path))).StatusCode);
+        using var unprovisioned = ApiFactory.CreateHttpsClient(factory, TestUsers.Unprovisioned);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await unprovisioned.SendAsync(new HttpRequestMessage(new HttpMethod(method), path))).StatusCode);
+    }
+
     [Fact]
     public async Task Openapi_documents_the_expense_workflow()
     {
         await using var factory = new ApiFactory();
         using var client = ApiFactory.CreateHttpsClient(factory);
         var paths = (await client.GetFromJsonAsync<JsonElement>("/openapi/v1.json")).GetProperty("paths");
-        foreach (var path in new[] { "/api/expenses", "/api/expenses/{id}", "/api/expenses/{id}/approve", "/api/audit-events" })
+        foreach (var path in new[] { "/api/expenses", "/api/expenses/{id}", "/api/expenses/{id}/approve", "/api/audit-events",
+                     "/api/notifications", "/api/messaging/outbox", "/api/messaging/outbox/{id}/replay" })
             Assert.True(paths.TryGetProperty(path, out _), $"Missing {path}");
     }
 }

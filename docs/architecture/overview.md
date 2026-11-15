@@ -1,6 +1,6 @@
 # Architecture overview
 
-FinOps Enterprise is a **modular monolith** with Clean Architecture layering: one deployable API, one SPA and one SQL Server database. See [ADR 0001](../decisions/0001-foundation.md) for why it is not split into services.
+FinOps Enterprise is a **modular monolith** with Clean Architecture layering: one deployable API, one background worker, one SPA and one SQL Server database. See [ADR 0001](../decisions/0001-foundation.md) for why it is not split into services.
 
 ## Components
 
@@ -58,6 +58,10 @@ sequenceDiagram
 | `finance` | `ExpenseRequests` | Operational | `decimal(19,4)`, `rowversion`, status, amount and currency check constraints, approval-queue and requester indexes. No cascade deletes |
 | `finance` | `ApprovalDecisions` | Operational, append-only | One row per approve or reject. A rejection must carry a comment (check constraint) |
 | `finance` | `Budgets` | Operational | One per department and month (unique), `rowversion`. Actuals are computed by `finance.usp_BudgetVsActual`, never stored |
+| `messaging` | `OutboxMessages` | Operational | Business events written with the state change. Lease, lock token, delivery count, retry time and outcome (processed or dead-lettered, never both). Filtered index on the pending backlog |
+| `messaging` | `ProcessedMessages` | Operational | Idempotency key: primary key (message ID, handler) |
+| `messaging` | `Notifications` | Operational | One per user per source message (unique). IDs only; text is built when read |
+| `finance` | `Reimbursements` | Operational | Exactly one per expense (unique `ExpenseRequestId`), created by the worker |
 | `audit` | `AuditEvents` | Append-only | Successes and denials, with correlation ID and allow-listed JSON metadata. No foreign keys, so history outlives the rows it describes |
 
 ## Operational surface
@@ -88,9 +92,25 @@ flowchart LR
 
 All three formats come from one `ReportTable`, so preview, PDF and Excel always agree. See [ADR 0004](../decisions/0004-report-access.md).
 
+## Background processing
+
+```mermaid
+flowchart LR
+  API["ExpenseWorkflow<br/>approve / reject / post"] -- "one transaction:<br/>state + audit + event" --> OB[("messaging.OutboxMessages")]
+  W["FinOps.Worker<br/>OutboxProcessor (1..n)"] -- "claim: UPDATE … OUTPUT<br/>UPDLOCK, READPAST, lease" --> OB
+  W --> H1["Notification handler"]
+  W --> H2["Reimbursement handler"]
+  H1 -- "effect + ProcessedMessages<br/>(one transaction)" --> N[("messaging.Notifications")]
+  H2 -- "effect + ProcessedMessages + audit<br/>(one transaction)" --> R[("finance.Reimbursements")]
+  W -- "complete / abandon(retry at) /<br/>dead-letter (lock token)" --> OB
+  Admin["Administrator"] -- "replay dead letter" --> OB
+```
+
+Delivery is at least once; each handler's effect is committed at most once per message. See [ADR 0005](../decisions/0005-messaging-outbox.md).
+
 ## Planned additions
 
 These are not built yet. They are added in their own phases (see [the spec](../../FINOPS_ENTERPRISE_CODEX_SPEC.md)):
 
-- Service Bus worker.
+- Azure Service Bus adapter for `IMessageQueue` (optional).
 - Azure deployment.
