@@ -83,7 +83,7 @@ Created by `dotnet run --project src/FinOps.Api -- seed-demo-data` (Development 
 
 The seed also creates four sample expenses: an Employee draft, an Employee submitted expense, an Employee expense approved by the Engineering Manager and ready to post, and the Engineering Manager's own submitted expense, which shows the self-approval block.
 
-In mock mode the Angular shell has a persona picker. It sends `X-Development-User: <object ID>`. The API accepts that header only when `ASPNETCORE_ENVIRONMENT=Development` and `Security:UseDevelopmentMockAuthentication=true`. Enabling mock mode in any other environment fails at startup.
+In mock mode the `/login` page (and later the workspace top bar) has a persona picker. It sends `X-Development-User: <object ID>`. The API accepts that header only when `ASPNETCORE_ENVIRONMENT=Development` and `Security:UseDevelopmentMockAuthentication=true`. Enabling mock mode in any other environment fails at startup.
 
 ## Entra registration (real SSO)
 

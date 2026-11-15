@@ -4,7 +4,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { authConfig } from './auth.config';
 import { authInterceptor } from './auth.interceptor';
-import { AuthService } from './auth.service';
+import { AuthService, safeReturnUrl } from './auth.service';
 
 describe('AuthService (Development mock mode)', () => {
   beforeEach(() => sessionStorage.clear());
@@ -27,12 +27,40 @@ describe('AuthService (Development mock mode)', () => {
     expect(auth.persona()).toBe(authConfig.mockPersonas[0].objectId);
   });
 
+  it('starts signed out until a persona is chosen on the sign-in page', async () => {
+    const auth = TestBed.inject(AuthService);
+    expect(auth.authenticated()).toBe(false);
+    await auth.signIn();
+    expect(auth.authenticated()).toBe(true);
+    auth.signOut();
+    expect(auth.authenticated()).toBe(false);
+  });
+
+  it('remembers a same-origin return URL once, and falls back to the dashboard', async () => {
+    const auth = TestBed.inject(AuthService);
+    await auth.signIn('/expenses?view=queue');
+    expect(auth.consumeReturnUrl()).toBe('/expenses?view=queue');
+    expect(auth.consumeReturnUrl()).toBe('/dashboard');
+    await auth.signIn('https://evil.example/');
+    expect(auth.consumeReturnUrl()).toBe('/dashboard');
+  });
+
   it('signs out by removing only keys owned by this app', () => {
     sessionStorage.setItem('finops.mock_object_id', authConfig.mockPersonas[2].objectId);
     sessionStorage.setItem('unrelated.key', 'keep');
     TestBed.inject(AuthService).signOut();
     expect(sessionStorage.getItem('finops.mock_object_id')).toBeNull();
     expect(sessionStorage.getItem('unrelated.key')).toBe('keep');
+  });
+});
+
+describe('safeReturnUrl', () => {
+  it('accepts only paths on this origin', () => {
+    expect(safeReturnUrl('/budgets')).toBe('/budgets');
+    expect(safeReturnUrl('/expenses/e1?view=all')).toBe('/expenses/e1?view=all');
+    for (const unsafe of ['https://evil.example', '//evil.example', '/\\evil.example', 'javascript:alert(1)', 'budgets', '', null, undefined]) {
+      expect(safeReturnUrl(unsafe)).toBeNull();
+    }
   });
 });
 

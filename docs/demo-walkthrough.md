@@ -6,7 +6,8 @@ Prepare before recording:
 
 - **Seed:** run `seed-demo-data`.
 - **Dashboard:** start it with `docker compose --profile observability up -d aspire-dashboard`.
-- **Tabs:** open http://127.0.0.1:4200 and http://localhost:18888 in two browser tabs.
+- **Tabs:** open http://127.0.0.1:4200 (it goes to `/login`: pick a persona and click *Continue*) and http://localhost:18888 in two browser tabs.
+- **Navigation:** each area is its own page in the sidebar (*Overview*, *Expenses*, *Budgets*, *Reports*, *Notifications*, *Outbox*). Switch persona from the top bar; the sidebar shows only the pages that persona may use.
 
 ## 1. What it is (30 s)
 
@@ -44,7 +45,7 @@ Prepare before recording:
    - The handlers are idempotent, so exactly one reimbursement exists.
 3. **Stop the worker** (Ctrl+C), post another expense, and refresh: nothing yet.
    - Start the worker again, and the notification arrives. No event was lost.
-4. **Demo Administrator** → *Outbox*: pending and dead-letter counts, and *Replay*.
+4. **Demo Administrator** → *Outbox* (`/admin/outbox`): pending and dead-letter counts, and *Replay*.
 
 ## 5. One trace across processes (60 s)
 

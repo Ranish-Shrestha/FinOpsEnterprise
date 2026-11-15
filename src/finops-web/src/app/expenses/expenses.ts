@@ -1,5 +1,6 @@
 import { CurrencyPipe, DatePipe } from '@angular/common';
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
 import { Observable } from 'rxjs';
 import { AuthService } from '../auth.service';
 import { CurrentUser, Department } from '../foundation.service';
@@ -33,9 +34,18 @@ function today(): string {
 export class Expenses {
   private readonly api = inject(ExpensesService);
   private readonly auth = inject(AuthService);
+  private readonly router = inject(Router, { optional: true });
+  /** Present only when the panel is a routed page; then the tab and the open expense are kept in the URL. */
+  private readonly route = inject(ActivatedRoute, { optional: true });
+  /** The expense the URL asks for (or the detail pane last opened), so URL changes and clicks don't loop. */
+  private requestedId: string | null = null;
 
   readonly user = input<CurrentUser | null>(null);
   readonly departments = input<Department[] | null>(null);
+  /** `?view=` query parameter: which tab to show. */
+  readonly viewParam = input<string | undefined>(undefined, { alias: 'view' });
+  /** `/expenses/:id` route parameter: which expense to open. */
+  readonly id = input<string | undefined>(undefined);
 
   readonly categories = categories;
   readonly view = signal<View>('mine');
@@ -82,10 +92,35 @@ export class Expenses {
       this.auth.persona();
       const user = this.user();
       untracked(() => {
-        if (!this.tabs().some((t) => t.view === this.view())) this.view.set('mine');
-        this.closeDetail();
+        const wanted = this.viewParam();
+        if (wanted && this.isTab(wanted)) this.view.set(wanted);
+        else if (!this.isTab(this.view())) this.view.set('mine');
+        this.clearDetail();
         this.formMode.set('closed');
         if (user) this.load(); else { this.items.set([]); this.total.set(0); }
+      });
+    });
+
+    // Back/forward or a link changed ?view=.
+    effect(() => {
+      const wanted = this.viewParam() ?? 'mine';
+      untracked(() => {
+        if (wanted === this.view() || !this.user() || !this.isTab(wanted)) return;
+        this.view.set(wanted);
+        this.page.set(1);
+        this.clearDetail();
+        this.load();
+      });
+    });
+
+    // /expenses/:id opens that expense; going back to /expenses closes it.
+    effect(() => {
+      const id = this.id();
+      const user = this.user();
+      untracked(() => {
+        if (!user) return;
+        if (id && id !== this.requestedId) this.open(id, false);
+        else if (!id && this.requestedId && this.route) this.clearDetail();
       });
     });
   }
@@ -101,7 +136,8 @@ export class Expenses {
   show(view: View): void {
     this.view.set(view);
     this.page.set(1);
-    this.closeDetail();
+    this.clearDetail();
+    this.syncUrl();
     this.load();
   }
 
@@ -120,7 +156,9 @@ export class Expenses {
     });
   }
 
-  open(id: string): void {
+  open(id: string, updateUrl = true): void {
+    this.requestedId = id;
+    if (updateUrl) this.syncUrl();
     this.actionError.set(null);
     this.comment.set('');
     this.formMode.set('closed');
@@ -131,9 +169,8 @@ export class Expenses {
   }
 
   closeDetail(): void {
-    this.selected.set(null);
-    this.actionError.set(null);
-    this.comment.set('');
+    this.clearDetail();
+    this.syncUrl();
   }
 
   act(action: Exclude<ExpenseAction, 'edit'>): void {
@@ -180,6 +217,7 @@ export class Expenses {
     request.subscribe({
       next: (expense) => {
         this.selected.set(expense);
+        if (expense.id !== this.requestedId) { this.requestedId = expense.id; this.syncUrl(); }
         this.comment.set('');
         this.busy.set(false);
         onSuccess?.();
@@ -190,6 +228,24 @@ export class Expenses {
         this.busy.set(false);
       },
     });
+  }
+
+  private clearDetail(): void {
+    this.requestedId = null;
+    this.selected.set(null);
+    this.actionError.set(null);
+    this.comment.set('');
+  }
+
+  private isTab(view: string): view is View {
+    return this.tabs().some((t) => t.view === view);
+  }
+
+  /** Mirrors the tab and the open expense into the address bar, so they survive refresh and can be shared. */
+  private syncUrl(): void {
+    if (!this.route || !this.router) return;
+    const view = this.view() === 'mine' ? null : this.view();
+    void this.router.navigate(this.requestedId ? ['/expenses', this.requestedId] : ['/expenses'], { queryParams: { view } });
   }
 
   private emptyForm(): ExpenseFields & { departmentId: string } {

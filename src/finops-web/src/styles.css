@@ -2,3 +2,28 @@
 body { margin: 0; font-family: Inter, "Segoe UI", Arial, sans-serif; background: #f6f7f2; color: #263b30; }
 button, a { -webkit-tap-highlight-color: transparent; }
 :focus-visible { outline: 3px solid #b88923; outline-offset: 4px; }
+
+/* Shared by layouts and pages. Feature panels keep their own scoped button styles. */
+h1 { font-family: Georgia, serif; font-size: clamp(30px, 3vw, 43px); font-weight: 400; color: #20372e; letter-spacing: -1px; margin: 0; }
+h2 { font-size: 20px; font-weight: 550; letter-spacing: -.4px; margin: 0; }
+.eyebrow { color: #527262; font-size: 10px; font-weight: 650; letter-spacing: 1.4px; margin: 0 0 12px; }
+button, .button { display: inline-block; background: #244f3f; color: #fff; border: 0; border-radius: 6px; padding: 12px 16px; font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; text-decoration: none; text-align: center; }
+button:hover, .button:hover { background: #163a2c; }
+button:disabled { cursor: wait; opacity: .7; }
+.button.secondary { background: #eef3ec; color: #244f3f; }
+.button.secondary:hover { background: #dfe9dc; }
+
+/* Sign-in and account-help pages (inside the auth layout card). */
+.auth-title { font-size: 30px; margin-bottom: 10px; }
+.auth-lead { color: #5d6a5b; font-size: 14px; line-height: 1.6; margin: 0 0 24px; }
+.auth-actions { display: flex; flex-direction: column; gap: 12px; margin-bottom: 22px; }
+.auth-actions button, .auth-actions .button { width: 100%; padding: 13px 16px; font-size: 13px; }
+.auth-field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 600; color: #34453e; margin-bottom: 16px; }
+.auth-field select { font: inherit; font-weight: 400; font-size: 14px; padding: 10px; border: 1px solid #ced7c9; border-radius: 6px; background: #fff; }
+.auth-links { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; border-top: 1px solid #edf0e9; padding-top: 18px; font-size: 12px; }
+.auth-links a, .auth-body a { color: #244f3f; }
+.auth-body { font-size: 13px; color: #34453e; line-height: 1.7; }
+.auth-body ol, .auth-body ul { padding-left: 20px; margin: 0 0 22px; }
+.auth-body code { background: #f1f4ee; padding: 2px 6px; border-radius: 4px; font-size: 12px; word-break: break-all; }
+.auth-error { color: #8a3b2e; background: #fbefec; border-radius: 6px; padding: 10px 12px; font-size: 12px; margin: 0 0 18px; }
+.auth-note { color: #5d6a5b; background: #f7f8f4; border: 1px dashed #ced7c9; border-radius: 7px; padding: 14px; font-size: 12px; line-height: 1.6; margin: 0 0 22px; }

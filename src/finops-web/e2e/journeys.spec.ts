@@ -10,11 +10,18 @@ const persona = {
 
 type Persona = (typeof persona)[keyof typeof persona];
 
+/** First call: the /login page. Later calls: the persona picker in the workspace top bar. */
 async function signInAs(page: Page, who: Persona): Promise<void> {
-  if (page.url() === 'about:blank') await page.goto('/');
+  if (page.url() === 'about:blank') await page.goto('/login');
   await page.getByLabel('Development persona').selectOption({ label: who.label });
-  await expect(page.locator('.intro .breadcrumb')).toHaveText(who.name);
-  await expect(page.getByRole('button', { name: 'Refresh status' })).toBeEnabled();
+  const continueButton = page.getByRole('button', { name: 'Continue' });
+  if (await continueButton.isVisible()) await continueButton.click();
+  await expect(page.locator('.user-name')).toHaveText(who.name);
+}
+
+/** Opens a workspace page from the sidebar. */
+async function openPage(page: Page, name: string): Promise<void> {
+  await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name, exact: true }).click();
 }
 
 function expensesPanel(page: Page) {
@@ -40,6 +47,7 @@ test('an expense goes from employee to manager to finance, and the worker notifi
   const description = `E2E taxi ${Date.now()}`;
 
   await signInAs(page, persona.employee);
+  await openPage(page, 'Expenses');
   const panel = expensesPanel(page);
   await panel.getByRole('button', { name: 'New expense' }).click();
   const form = panel.getByRole('form', { name: 'Expense details' });
@@ -65,6 +73,7 @@ test('an expense goes from employee to manager to finance, and the worker notifi
 
   // Delivered asynchronously by FinOps.Worker through the outbox: refresh until it arrives.
   await signInAs(page, persona.employee);
+  await openPage(page, 'Notifications');
   const notifications = page.getByRole('region', { name: /^Notifications/ });
   const mineNotified = notifications.getByRole('listitem').filter({ hasText: description });
   await expect(async () => {
@@ -73,8 +82,14 @@ test('an expense goes from employee to manager to finance, and the worker notifi
     await expect(mineNotified.filter({ hasText: 'was approved' })).toBeVisible({ timeout: 1_000 });
   }).toPass({ timeout: 30_000 });
 
+  await openPage(page, 'Expenses');
   const mine = await openFromTab(page, 'My expenses', description);
   await expect(mine.getByText(/^Scheduled /)).toBeVisible();
+
+  // The open expense is in the URL, so a refresh (or a shared link) shows it again.
+  await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
+  await page.reload();
+  await expect(expensesPanel(page).getByRole('complementary').getByRole('heading', { name: description })).toBeVisible();
 });
 
 test('a manager sees only their own department, in the UI and at the API', async ({ page, request }) => {
@@ -94,6 +109,7 @@ test('a manager sees only their own department, in the UI and at the API', async
 
 test('finance downloads the budget report as an Excel file', async ({ page }) => {
   await signInAs(page, persona.finance);
+  await openPage(page, 'Reports');
   const reports = page.getByRole('region', { name: 'Reports' });
   await reports.getByRole('button', { name: /Budget vs\. actual/ }).click();
   await reports.getByRole('button', { name: 'Preview' }).click();
@@ -109,4 +125,32 @@ test('finance downloads the budget report as an Excel file', async ({ page }) =>
   for await (const chunk of stream) chunks.push(chunk as Buffer);
   const file = Buffer.concat(chunks);
   expect(file.subarray(0, 2).toString()).toBe('PK'); // an .xlsx is a zip package
+});
+
+test('sign-in returns to the page that was asked for', async ({ page }) => {
+  await page.goto('/notifications');
+  await expect(page).toHaveURL(/\/login\?returnUrl=%2Fnotifications$/);
+  await page.getByLabel('Development persona').selectOption({ label: persona.employee.label });
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page).toHaveURL(/\/notifications$/);
+  await expect(page.getByRole('region', { name: /^Notifications/ })).toBeVisible();
+});
+
+test('pages the caller may not use are hidden and redirect to the dashboard', async ({ page }) => {
+  await page.goto('/budgets');
+  await page.getByLabel('Development persona').selectOption({ label: persona.employee.label });
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  const nav = page.getByRole('navigation', { name: 'Main navigation' });
+  await expect(nav.getByRole('link', { name: 'Expenses' })).toBeVisible();
+  await expect(nav.getByRole('link', { name: 'Budgets' })).toHaveCount(0);
+  await expect(nav.getByRole('link', { name: 'Outbox' })).toHaveCount(0);
+});
+
+test('signing out ends the session and protects the workspace', async ({ page }) => {
+  await signInAs(page, persona.employee);
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await expect(page).toHaveURL(/\/signed-out$/);
+  await page.goto('/expenses');
+  await expect(page).toHaveURL(/\/login\?returnUrl=%2Fexpenses$/);
 });

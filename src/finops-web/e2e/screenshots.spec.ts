@@ -13,19 +13,27 @@ test.use({ viewport: { width: 1440, height: 1000 } });
 const out = (name: string) => join(__dirname, '..', '..', '..', 'docs', 'screenshots', name);
 
 async function signInAs(page: Page, label: string, name: string): Promise<void> {
-  if (page.url() === 'about:blank') await page.goto('/');
+  if (page.url() === 'about:blank') await page.goto('/login');
   await page.getByLabel('Development persona').selectOption({ label });
-  await expect(page.locator('.intro .breadcrumb')).toHaveText(name);
-  await expect(page.getByRole('button', { name: 'Refresh status' })).toBeEnabled();
+  const continueButton = page.getByRole('button', { name: 'Continue' });
+  if (await continueButton.isVisible()) await continueButton.click();
+  await expect(page.locator('.user-name')).toHaveText(name);
+  await page.waitForLoadState('networkidle');
+}
+
+async function openPage(page: Page, path: string): Promise<void> {
+  await page.goto(path);
   await page.waitForLoadState('networkidle');
 }
 
 test('README screenshots', async ({ page }) => {
   await signInAs(page, 'Demo Employee (Engineering)', 'Demo Employee');
   await page.screenshot({ path: out('overview.png') });
+  await openPage(page, '/notifications');
   await page.getByRole('region', { name: /^Notifications/ }).screenshot({ path: out('notifications.png') });
 
   await signInAs(page, 'Demo Engineering Manager (approves Engineering)', 'Demo Engineering Manager');
+  await openPage(page, '/expenses');
   const expenses = page.getByRole('region', { name: 'Expenses' });
   await expenses.getByRole('tab', { name: 'Approval queue' }).click();
   await expenses.getByRole('table').getByRole('button').first().click();
@@ -33,7 +41,9 @@ test('README screenshots', async ({ page }) => {
   await expenses.screenshot({ path: out('approval-queue.png') });
 
   await signInAs(page, 'Demo Finance Officer (posts approved expenses)', 'Demo Finance Officer');
+  await openPage(page, '/budgets');
   await page.getByRole('region', { name: 'Budget vs. actual' }).screenshot({ path: out('budgets.png') });
+  await openPage(page, '/reports');
   const reports = page.getByRole('region', { name: 'Reports' });
   await reports.getByRole('button', { name: /Department expense summary/ }).click();
   await reports.getByRole('button', { name: 'Preview' }).click();
@@ -41,5 +51,6 @@ test('README screenshots', async ({ page }) => {
   await reports.screenshot({ path: out('reports.png') });
 
   await signInAs(page, 'Demo Administrator (reads all, audit)', 'Demo Administrator');
-  await page.getByRole('region', { name: /^Notifications/ }).screenshot({ path: out('outbox.png') });
+  await openPage(page, '/admin/outbox');
+  await page.getByRole('region', { name: /^Outbox/ }).screenshot({ path: out('outbox.png') });
 });

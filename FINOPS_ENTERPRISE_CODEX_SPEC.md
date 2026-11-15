@@ -214,6 +214,41 @@ Status key: ✅ done · 🟡 partially verified · ⬜ not started.
 - Add Entra ID integration, OIDC/OAuth2 flow, JWT validation, role/permission policy, and ownership/department checks.
 - **Done when:** Valid users can sign in; permission and cross-department access tests pass.
 - *Status:* access tests pass against real SQL Server. The production JWT validation is tested with locally signed tokens: issuer, audience, signature, lifetime, scope and provisioning. The browser's PKCE flow is unit tested. Only a sign-in against a real Entra tenant remains ([verification](docs/verification.md)). Hardening and CI were pulled forward from Phase 6 (ADR 0003).
+- **To finish (owner, about 30 minutes, free, all local):** one real sign-in. No code changes are expected. Details for each step are in [Entra registration](docs/security/identity-authorization.md#entra-registration-real-sso).
+  1. **Get a tenant.** Use a Microsoft Entra tenant where you can register applications. The free tier is enough.
+  2. **Register the API app.**
+     - *Expose an API:* set the Application ID URI to `api://<api-client-id>` and add the delegated scope `FinOps.Access`.
+     - *Manifest:* set `"requestedAccessTokenVersion": 2`. With v1 tokens, every call is 401.
+  3. **Register the SPA app.**
+     - Add a *Single-page application* platform with redirect URI `http://127.0.0.1:4200/`.
+     - Under *API permissions*, add the API's `FinOps.Access`.
+     - Create no client secret.
+  4. **Configure the API** with user secrets on `src/FinOps.Api`:
+     - `Security:TenantId` = the tenant ID.
+     - `Security:Audience` = the API's **client ID GUID**. That is what a v2 token's `aud` contains, not the `api://` URI.
+     - `Security:UseDevelopmentMockAuthentication` = `false`.
+  5. **Configure the SPA** in `src/finops-web/public/config.json`:
+     - Set `"mockMode": false`, `tenantId`, `spaClientId`, and `apiScope` = `api://<api-client-id>/FinOps.Access`.
+     - Keep `apiBaseUrl` empty.
+     - **Don't commit this change.**
+  6. **Provision yourself** in the local database with [infra/sql/provision-user.sql](infra/sql/provision-user.sql).
+     - Fill in your Entra **object ID**, not your email (Entra admin center → *Users* → you → *Object ID*).
+     - Use role `Manager` and department `Demo Engineering`, so the permission checks have something to show.
+     - Run it against `FinOpsEnterprise` on the local container as `sa`.
+  7. **Restart the API and the UI**, open http://127.0.0.1:4200 and choose *Sign in*. Pass when:
+     - Entra returns you to the app, and the Identity card shows *Authorized* with your role.
+     - *Sample departments* lists only Demo Engineering.
+     - The Approval queue tab appears.
+     - *Sign out* returns you to the *Sign in* button.
+  8. **Run the negative check.** Sign in with a second tenant user who isn't provisioned. Expect *No application access*: `/api/me` returns 403.
+  9. **Record the result.**
+     - Add an entry to `docs/verification.md`: date, token version, and what passed. Don't include tenant IDs, object IDs or tokens.
+     - Mark this phase ✅.
+  10. **Return to mock mode** for everyday development: revert `public/config.json`, and set `Security:UseDevelopmentMockAuthentication` back to `true`.
+- **If sign-in fails:**
+  - **401 on every call:** the token is v1 (step 2), or the audience doesn't match (step 4).
+  - **403 with a valid token:** the token lacks `FinOps.Access` (step 3), or your object ID isn't provisioned (step 6).
+  - **Error on Entra's page:** check the redirect URI matches exactly, including the trailing slash.
 
 ### Phase 3 — Finance workflows + SQL (Weeks 4–5) ✅
 - Expense CRUD, submission, approvals, budget tracking, migrations, LINQ, stored procedures, indexes.

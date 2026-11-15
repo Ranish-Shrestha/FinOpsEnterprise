@@ -10,7 +10,20 @@ const keys = {
   oauthState: 'finops.oauth_state',
   pkceVerifier: 'finops.pkce_verifier',
   mockObjectId: 'finops.mock_object_id',
+  mockSignedIn: 'finops.mock_signed_in',
+  returnUrl: 'finops.return_url',
 } as const;
+
+const defaultReturnUrl = '/dashboard';
+
+/**
+ * A same-origin path such as `/expenses?view=queue`, or null. Rejects absolute URLs, protocol-relative `//host` and
+ * `/\host` (which browsers treat as `//host`), so a crafted `?returnUrl=` cannot send the user to another site.
+ */
+export function safeReturnUrl(value: string | null | undefined): string | null {
+  if (!value || !value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\')) return null;
+  return value;
+}
 
 /**
  * Browser sign-in. This is convenience only: the API validates every token and authorizes every request.
@@ -23,13 +36,19 @@ export class AuthService {
   readonly personas = authConfig.mockPersonas;
   readonly persona = signal<string>(
     sessionStorage.getItem(keys.mockObjectId) ?? authConfig.mockPersonas[0].objectId);
-  readonly authenticated = signal<boolean>(authConfig.mockMode || this.hasUnexpiredToken());
+  readonly authenticated = signal<boolean>(this.hasSession());
+  /** Why the last sign-in failed, for the login page. */
+  readonly signInError = signal<string | null>(null);
 
-  async completeRedirect(): Promise<void> {
-    if (authConfig.mockMode) return;
+  /**
+   * Finishes an Entra redirect (`?code=&state=`) if the URL carries one. Returns true when a token was obtained.
+   * Runs as an app initializer, before the router reads the URL.
+   */
+  async completeRedirect(): Promise<boolean> {
+    if (authConfig.mockMode) return false;
     const params = new URLSearchParams(location.search);
     const code = params.get('code');
-    if (!code) return;
+    if (!code) return false;
     const state = sessionStorage.getItem(keys.oauthState);
     const verifier = sessionStorage.getItem(keys.pkceVerifier);
     // One-time values: remove before use so a replayed redirect cannot reuse them.
@@ -48,10 +67,27 @@ export class AuthService {
     sessionStorage.setItem(keys.accessToken, token.access_token);
     sessionStorage.setItem(keys.accessTokenExpiry, String(Date.now() + token.expires_in * 1000));
     this.authenticated.set(true);
+    this.signInError.set(null);
+    return true;
   }
 
-  async signIn(): Promise<void> {
-    if (authConfig.mockMode) { this.authenticated.set(true); return; }
+  /** Where to go after sign-in: the saved same-origin path, or the dashboard. Reading it removes it. */
+  consumeReturnUrl(): string {
+    const saved = safeReturnUrl(sessionStorage.getItem(keys.returnUrl));
+    sessionStorage.removeItem(keys.returnUrl);
+    return saved ?? defaultReturnUrl;
+  }
+
+  async signIn(returnUrl?: string | null): Promise<void> {
+    const target = safeReturnUrl(returnUrl);
+    if (target) sessionStorage.setItem(keys.returnUrl, target);
+    else sessionStorage.removeItem(keys.returnUrl);
+    this.signInError.set(null);
+    if (authConfig.mockMode) {
+      sessionStorage.setItem(keys.mockSignedIn, 'true');
+      this.authenticated.set(true);
+      return;
+    }
     const verifier = this.base64Url(crypto.getRandomValues(new Uint8Array(48)));
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
     const state = crypto.randomUUID();
@@ -63,6 +99,7 @@ export class AuthService {
     this.navigate(`https://login.microsoftonline.com/${authConfig.tenantId}/oauth2/v2.0/authorize?${query}`);
   }
 
+  /** Clears this app's session. In Entra mode it also leaves for the Entra logout page; the caller routes otherwise. */
   signOut(): void {
     this.clearSession();
     if (!authConfig.mockMode) {
@@ -86,6 +123,24 @@ export class AuthService {
     this.authenticated.set(false);
   }
 
+  /**
+   * The signed-in account's Entra object ID (`oid`), for the access-request page. Display only: the token is read
+   * without verification, and the API validates it on every request.
+   */
+  accountObjectId(): string | null {
+    if (authConfig.mockMode) return this.authenticated() ? this.persona() : null;
+    const token = sessionStorage.getItem(keys.accessToken);
+    try {
+      const payload = token?.split('.')[1];
+      if (!payload) return null;
+      const json = atob(payload.replaceAll('-', '+').replaceAll('_', '/'));
+      const oid = (JSON.parse(json) as { oid?: unknown }).oid;
+      return typeof oid === 'string' ? oid : null;
+    } catch {
+      return null;
+    }
+  }
+
   authorizationHeaders(): Record<string, string> {
     if (authConfig.mockMode) return { 'X-Development-User': this.persona() };
     const token = sessionStorage.getItem(keys.accessToken);
@@ -97,6 +152,10 @@ export class AuthService {
     location.assign(url);
   }
 
+  private hasSession(): boolean {
+    return authConfig.mockMode ? sessionStorage.getItem(keys.mockSignedIn) === 'true' : this.hasUnexpiredToken();
+  }
+
   private hasUnexpiredToken(): boolean {
     return !!sessionStorage.getItem(keys.accessToken)
       && Number(sessionStorage.getItem(keys.accessTokenExpiry) ?? 0) > Date.now();
@@ -104,7 +163,7 @@ export class AuthService {
 
   private clearSession(): void {
     Object.values(keys).forEach((key) => sessionStorage.removeItem(key));
-    this.authenticated.set(authConfig.mockMode);
+    this.authenticated.set(false);
   }
 
   private base64Url(value: Uint8Array): string {

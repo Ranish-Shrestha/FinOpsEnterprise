@@ -1,42 +1,10 @@
-import { Component, DestroyRef, inject, OnInit, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { finalize } from 'rxjs';
-import { FoundationService, FoundationState } from './foundation.service';
-import { AuthService } from './auth.service';
-import { Budgets } from './budgets/budgets';
-import { Expenses } from './expenses/expenses';
-import { Reports } from './reports/reports';
-import { Activity } from './activity/activity';
+import { Component } from '@angular/core';
+import { RouterOutlet } from '@angular/router';
 
+/** The root: every page renders inside a layout chosen by the router (see app.routes.ts). */
 @Component({
   selector: 'app-root',
-  imports: [Expenses, Budgets, Reports, Activity],
-  templateUrl: './app.html',
-  styleUrl: './app.css',
+  imports: [RouterOutlet],
+  template: '<router-outlet />',
 })
-export class App implements OnInit {
-  private readonly service = inject(FoundationService);
-  private readonly destroyRef = inject(DestroyRef);
-  readonly auth = inject(AuthService);
-  readonly loading = signal(false);
-  readonly state = signal<FoundationState | null>(null);
-
-  ngOnInit(): void {
-    if (this.auth.authenticated()) this.refresh();
-    else void this.auth.completeRedirect().then(() => this.refresh());
-  }
-
-  choosePersona(objectId: string): void {
-    this.auth.selectPersona(objectId);
-    this.refresh();
-  }
-
-  refresh(): void {
-    if (this.loading()) return;
-    this.loading.set(true);
-    this.service.load().pipe(
-      takeUntilDestroyed(this.destroyRef),
-      finalize(() => this.loading.set(false)),
-    ).subscribe((state) => this.state.set(state));
-  }
-}
+export class App {}

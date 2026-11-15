@@ -1,0 +1,38 @@
+<a class="skip-link" href="#main" (click)="focusMain($event)">Skip to content</a>
+<div class="workspace">
+  <aside class="sidebar">
+    <a class="brand" routerLink="/dashboard" aria-label="FinOps Enterprise home">
+      <span class="brand-icon" aria-hidden="true">F</span>
+      <span>FinOps<span class="brand-subtitle">ENTERPRISE</span></span>
+    </a>
+    <p class="nav-label">WORKSPACE</p>
+    <nav aria-label="Main navigation">
+      @for (item of nav(); track item.path) {
+        <a class="nav-link" [routerLink]="item.path" routerLinkActive="nav-current" ariaCurrentWhenActive="page">{{ item.label }}</a>
+      }
+    </nav>
+    <div class="sidebar-note"><span class="dot"></span> {{ mockMode ? 'Local development' : 'Signed in with Microsoft' }}<span>{{ mockMode ? 'Synthetic data only' : 'Access is checked by the API' }}</span></div>
+  </aside>
+  <div class="content">
+    <header class="topbar">
+      <span>Workspace <span class="breadcrumb">/ {{ pageName() }}</span></span>
+      <div class="user-menu">
+        @if (session.user(); as user) { <span class="user-name">{{ user.displayName }}</span> }
+        @if (mockMode) {
+          <label class="persona-picker">Development persona
+            <select [value]="auth.persona()" (change)="choosePersona($any($event.target).value)" [disabled]="session.loading()">
+              @for (persona of auth.personas; track persona.objectId) {
+                <option [value]="persona.objectId">{{ persona.label }}</option>
+              }
+            </select>
+          </label>
+        }
+        <button type="button" class="sign-out" (click)="signOut()">Sign out</button>
+      </div>
+    </header>
+    <main id="main" tabindex="-1">
+      <router-outlet />
+      <footer><span>Built to grow, one phase at a time.</span><span>Authentication and department authorization are enforced by the API.</span></footer>
+    </main>
+  </div>
+</div>

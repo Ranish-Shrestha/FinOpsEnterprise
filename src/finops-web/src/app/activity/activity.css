@@ -38,3 +38,4 @@ code { font-size: 11px; background: #f2f4ef; padding: 1px 5px; border-radius: 4p
   .activity { padding: 18px; }
   .notifications li { flex-direction: column; align-items: flex-start; }
 }
+.outbox.outbox-only { margin-top: 0; padding-top: 0; border-top: 0; }

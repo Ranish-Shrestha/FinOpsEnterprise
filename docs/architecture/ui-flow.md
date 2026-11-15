@@ -1,12 +1,45 @@
 # UI flow
 
-How the Angular app starts, signs in, and decides what each user sees. The app is a **single page** with no client-side routes: the landing page is the workspace, and each section appears or hides according to the caller's permissions, which the API returns from `GET /api/me`.
+How the Angular app starts, signs in, and decides what each user sees. The app uses the Angular router with two layouts: a centered **auth layout** for the sign-in and account-help pages, and a **shell layout** (sidebar, top bar, user menu) for the workspace pages. Which pages and sections a caller sees depends on the permissions the API returns from `GET /api/me`. See [ADR 0008](../decisions/0008-client-routing.md).
 
 The UI never decides access on its own. Hiding a button is a convenience: the API checks every request again, and returns 403 for anything the caller may not do.
 
-Source: [main.ts](../../src/finops-web/src/main.ts), [app.html](../../src/finops-web/src/app/app.html), [auth.service.ts](../../src/finops-web/src/app/auth.service.ts) and the feature folders under [src/finops-web/src/app](../../src/finops-web/src/app).
+Source: [main.ts](../../src/finops-web/src/main.ts), [app.config.ts](../../src/finops-web/src/app/app.config.ts), [app.routes.ts](../../src/finops-web/src/app/app.routes.ts), [core/guards.ts](../../src/finops-web/src/app/core/guards.ts), [auth.service.ts](../../src/finops-web/src/app/auth.service.ts) and the feature folders under [src/finops-web/src/app](../../src/finops-web/src/app).
 
-## 1. Start-up and sign-in (the landing page)
+## Pages and routes
+
+| Route | Layout | Guard | Page |
+| --- | --- | --- | --- |
+| `/login` | Auth | signed out only | *Sign in with Microsoft* (Entra SSO). In mock mode: persona picker and *Continue* |
+| `/signup` | Auth | signed out only | *Request access*: there is no self-service sign-up, because an administrator provisions accounts |
+| `/forgot-password` | Auth | none | Link to Entra self-service password reset. We never store passwords |
+| `/mfa` | Auth | none | MFA is enforced by Entra Conditional Access; link to Microsoft security info |
+| `/access-denied` | Auth | none | Signed in, but no active FinOps profile (`/api/me` 403); shows the Object ID to send to an administrator |
+| `/signed-out` | Auth | none | Confirmation, and *Sign in again* |
+| `/dashboard` | Shell | signed in | System overview and departments |
+| `/expenses`, `/expenses/:id` | Shell | signed in | Expenses. The tab is `?view=mine\|queue\|toPost\|all`; `:id` opens the detail pane |
+| `/budgets` | Shell | `budgets.read.department` or `.all` | Budget vs. actual |
+| `/reports` | Shell | `reports.read.department`, `.all` or `audit.read` | Reports |
+| `/notifications` | Shell | signed in | Notifications |
+| `/admin/outbox` | Shell | `messaging.manage` | Outbox status, dead letters, Replay |
+| anything else | Auth | none | Page not found |
+
+```mermaid
+flowchart TD
+  Nav(["Navigate to a workspace page"]) --> Signed{"Signed in?"}
+  Signed -- "no" --> Login["/login?returnUrl=the page"]
+  Signed -- "yes" --> Me{"GET /api/me"}
+  Me -- "403 (API up)" --> Denied["/access-denied"]
+  Me -- "profile" --> Perm{"Page permission?"}
+  Me -- "API down" --> Dash
+  Perm -- "no" --> Dash["/dashboard"]
+  Perm -- "yes" --> Page["The page"]
+  Login -- "sign in" --> Back["Back to returnUrl<br/>(same-origin paths only)"] --> Nav
+```
+
+The guards only choose a page. The sidebar uses the same permission lists ([core/permissions.ts](../../src/finops-web/src/app/core/permissions.ts)), and the API still authorizes every request. Switching persona in mock mode re-runs the guards, so a page the new persona may not use redirects to the dashboard.
+
+## 1. Start-up and sign-in
 
 ```mermaid
 flowchart TD
@@ -20,13 +53,13 @@ flowchart TD
   Apply --> Boot
   Boot --> Mode{"Mock mode?"}
 
-  Mode -- "yes (Development)" --> Persona["Landing page with the<br/>Development persona picker"]
-  Persona -- "choose a persona" --> Load
+  Mode -- "yes (Development)" --> Persona["/login with the<br/>Development persona picker"]
+  Persona -- "choose a persona, Continue" --> Load
 
   Mode -- "no (Entra)" --> HasToken{"Unexpired token<br/>in this tab?"}
   HasToken -- "yes" --> Load
   HasToken -- "no" --> Code{"?code= in the URL?<br/>(returning from Entra)"}
-  Code -- "no" --> SignIn["Landing page with<br/>Sign in button"]
+  Code -- "no" --> SignIn["/login with<br/>Sign in with Microsoft"]
   SignIn -- "click Sign in" --> Authorize["Redirect to Entra authorize<br/>(PKCE S256 challenge, state)"]
   Authorize -- "user signs in" --> Back["Entra redirects back<br/>with ?code and state"]
   Back --> Code
@@ -35,13 +68,15 @@ flowchart TD
   State -- "yes" --> Exchange["POST /token with the code<br/>and PKCE verifier"]
   Exchange --> Load
 
-  Load["Load the overview, in parallel:<br/>GET /health, /health/ready,<br/>/api/me, /api/departments"] --> Workspace["Workspace page<br/>(see section 2)"]
+  Load["Load the session once, in parallel:<br/>GET /health, /health/ready,<br/>/api/me, /api/departments"] --> Workspace["The page from returnUrl,<br/>or /dashboard (see section 2)"]
   Workspace -- "API answers 401<br/>(token expired)" --> SignIn
-  Workspace -- "Sign out" --> Logout["Clear this app's session keys,<br/>Entra logout, back to the app"]
+  Workspace -- "Sign out" --> Logout["Clear this app's session keys,<br/>Entra logout (mock: /signed-out)"]
   Logout --> SignIn
 ```
 
-What the landing page shows before and after access is known:
+The Entra redirect still returns to the site root (`/`), so the app registration doesn't change. An app initializer exchanges the code before the router starts, then replaces the address with the saved `returnUrl`.
+
+What the caller sees before and after access is known:
 
 | Situation | System overview cards | Rest of the page |
 | --- | --- | --- |
@@ -49,18 +84,17 @@ What the landing page shows before and after access is known:
 | Signed in, but no application profile, or the profile is inactive (`/api/me` is 403) | Identity: *Sign in*, "No application access" | Expenses says "Sign in with an active account to see expenses"; the other feature sections stay hidden |
 | Signed in and provisioned | Identity: *Authorized*, with the user's roles | Sections allowed by their permissions (section 2) |
 
-## 2. The workspace page and what controls each section
+## 2. Workspace pages and what controls each section
 
 ```mermaid
 flowchart TD
-  Page["Workspace page<br/>(sidebar, header, Refresh status)"] --> Overview["System overview<br/>API, database, identity cards"]
-  Page --> Depts["Sample departments<br/>server-filtered by membership"]
-  Page --> Activity["Notifications<br/>shown to any provisioned user"]
-  Page --> Expenses["Expenses<br/>shown to any provisioned user"]
-  Page --> Budgets["Budget vs. actual"]
-  Page --> Reports["Reports"]
+  Page["Shell layout<br/>(sidebar, top bar, user menu)"] --> Overview["/dashboard<br/>API, database, identity cards,<br/>departments (server-filtered)"]
+  Page --> Activity["/notifications<br/>any provisioned user"]
+  Page --> Expenses["/expenses<br/>any provisioned user"]
+  Page --> Budgets["/budgets<br/>Budget vs. actual"]
+  Page --> Reports["/reports"]
 
-  Activity --> Outbox["Outbox status, dead letters, Replay<br/>needs messaging.manage"]
+  Page --> Outbox["/admin/outbox<br/>Outbox status, dead letters, Replay<br/>needs messaging.manage"]
 
   Expenses --> Mine["Tab: My expenses (always)"]
   Expenses --> Queue["Tab: Approval queue<br/>needs expenses.approve"]

@@ -3,19 +3,27 @@
     <div class="panel-header">
       <div>
         <p class="eyebrow">BACKGROUND PROCESSING</p>
-        <h2 id="activity-heading">Notifications
-          @if (unread() > 0) { <span class="count" [attr.aria-label]="unread() + ' unread'">{{ unread() }}</span> }
-        </h2>
+        @if (showNotifications()) {
+          <h2 id="activity-heading">Notifications
+            @if (unread() > 0) { <span class="count" [attr.aria-label]="unread() + ' unread'">{{ unread() }}</span> }
+          </h2>
+        } @else {
+          <h2 id="activity-heading">Outbox</h2>
+        }
       </div>
       <button type="button" class="secondary" (click)="load()" [disabled]="loading()">{{ loading() ? 'Loading...' : 'Refresh' }}</button>
     </div>
+    @if (showNotifications()) {
     <p class="panel-description">Delivered by the background worker from the transactional outbox, so they appear shortly after an approval, rejection or posting. Run <code>FinOps.Worker</code> next to the API.</p>
+    } @else {
+    <p class="panel-description">Messages written in the same transaction as each expense change, waiting for or failed by the background worker. Replay returns a dead-lettered message to the queue.</p>
+    }
     @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
     @if (message()) { <p class="notice" role="status">{{ message() }}</p> }
 
-    @if (notifications().length === 0 && !loading()) {
+    @if (showNotifications() && notifications().length === 0 && !loading()) {
       <p class="empty-state">No notifications yet.</p>
-    } @else {
+    } @else if (showNotifications()) {
       <ul class="notifications">
         @for (n of notifications(); track n.id) {
           <li [class.unread]="!n.readAtUtc">
@@ -30,8 +38,8 @@
     }
 
     @if (outbox(); as status) {
-      <div class="outbox">
-        <h3>Outbox</h3>
+      <div class="outbox" [class.outbox-only]="!showNotifications()">
+        @if (showNotifications()) { <h3>Outbox</h3> }
         <p class="muted">{{ status.pending }} pending · {{ status.deadLettered }} dead-lettered</p>
         @if (status.deadLetters.length > 0) {
           <div class="table-wrap">

@@ -20,6 +20,8 @@ export class Activity {
   private readonly auth = inject(AuthService);
 
   readonly user = input<CurrentUser | null>(null);
+  /** Route data: `/notifications` shows the inbox, `/admin/outbox` the outbox. Both when used as a panel. */
+  readonly mode = input<'all' | 'notifications' | 'outbox'>('all');
 
   readonly notifications = signal<AppNotification[]>([]);
   readonly unread = signal(0);
@@ -29,11 +31,14 @@ export class Activity {
   readonly message = signal<string | null>(null);
 
   readonly canOperate = computed(() => this.user()?.permissions.includes('messaging.manage') ?? false);
+  readonly showNotifications = computed(() => this.mode() !== 'outbox');
+  readonly showOutbox = computed(() => this.mode() !== 'notifications' && this.canOperate());
   readonly text = notificationText;
 
   constructor() {
     effect(() => {
       this.auth.persona();
+      this.mode();
       const user = this.user();
       untracked(() => {
         this.message.set(null);
@@ -46,17 +51,20 @@ export class Activity {
   load(): void {
     this.loading.set(true);
     this.error.set(null);
-    this.api.inbox().subscribe({
-      next: (inbox) => { this.notifications.set(inbox.items); this.unread.set(inbox.unreadCount); this.loading.set(false); },
-      error: (e: unknown) => { this.error.set(problemMessage(e)); this.loading.set(false); },
-    });
-    if (this.canOperate()) {
+    if (this.showNotifications()) {
+      this.api.inbox().subscribe({
+        next: (inbox) => { this.notifications.set(inbox.items); this.unread.set(inbox.unreadCount); this.loading.set(false); },
+        error: (e: unknown) => { this.error.set(problemMessage(e)); this.loading.set(false); },
+      });
+    }
+    if (this.showOutbox()) {
       this.api.outbox().subscribe({
-        next: (status) => this.outbox.set(status),
-        error: (e: unknown) => this.error.set(problemMessage(e)),
+        next: (status) => { this.outbox.set(status); if (!this.showNotifications()) this.loading.set(false); },
+        error: (e: unknown) => { this.error.set(problemMessage(e)); if (!this.showNotifications()) this.loading.set(false); },
       });
     } else {
       this.outbox.set(null);
+      if (!this.showNotifications()) this.loading.set(false);
     }
   }
 
