@@ -71,10 +71,11 @@ sequenceDiagram
 | Liveness / readiness | `/health` (process) and `/health/ready` (queries the mapped schema) |
 | Errors | RFC 9457 Problem Details with `traceId`; no exception text |
 | Correlation | `X-Correlation-ID`: a safe inbound value is echoed, otherwise the W3C trace ID. Added to every log scope |
-| Logging | JSON console with scopes |
+| Logging | JSON console with scopes; also exported over OTLP with trace context when telemetry is on |
+| Telemetry | OpenTelemetry traces and metrics (ASP.NET Core, SqlClient, runtime, `FinOps` source and meter), opt-in via `OTEL_EXPORTER_OTLP_ENDPOINT`. The worker's spans continue the request's trace. See [observability](../operations/observability.md) |
 | Hardening | HSTS (outside Development), `nosniff`, `X-Frame-Options: DENY`, restrictive CSP, `no-store` on `/api` |
 | Rate limiting | Fixed window per caller on `/api/*`, configurable via `RateLimiting:PermitLimit` and `RateLimiting:WindowSeconds` |
-| CI | `.github/workflows/ci.yml`: locked restore, build, unit and HTTP tests, Testcontainers SQL tests, EF drift check, Angular checks, production dependency audit |
+| CI | `.github/workflows/ci.yml`: locked restore, build, unit and HTTP tests, Testcontainers SQL tests (including the enforced latency targets), EF drift check, Angular checks, Playwright end-to-end journeys, production dependency audit |
 
 ## Reporting
 

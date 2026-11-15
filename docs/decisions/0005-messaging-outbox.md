@@ -29,7 +29,7 @@ There are four constraints:
    - otherwise runs it, and commits its effects and that idempotency row together;
    - treats a primary-key collision from a concurrent delivery as "already done".
 
-   A retry after a partial failure therefore re-runs only the handlers that did not commit.
+   A retry after a partial failure therefore re-runs only the handlers that did not commit. Handlers run in registration order and a failure stops the rest, so the reimbursement commits before the notification that announces it (amended 2026-11-14 after an E2E test caught the notification arriving first).
 4. **Database backstops.** One reimbursement per expense (`UX_Reimbursements_Expense`) and one notification per user per message (`UX_Notifications_Source_User`). The reimbursement handler also checks by business key, so even a *different* message about the same posted expense cannot pay twice.
 5. **Retries and dead letters.**
    - Exponential backoff: 5 s, 10 s, 20 s, … capped at 300 s.

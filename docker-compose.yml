@@ -21,5 +21,17 @@ services:
       retries: 15
       start_period: 30s
 
+  # Optional telemetry UI: traces, metrics and logs from the API and worker (OTLP). Start it with
+  #   docker compose --profile observability up -d aspire-dashboard
+  # then open http://localhost:18888. Anonymous access is fine only because both ports bind to 127.0.0.1.
+  aspire-dashboard:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:13.6.2
+    profiles: [observability]
+    environment:
+      ASPIRE_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
+    ports:
+      - "127.0.0.1:18888:18888"   # dashboard UI
+      - "127.0.0.1:4317:18889"    # OTLP/gRPC receiver
+
 volumes:
   sqlserver-data:

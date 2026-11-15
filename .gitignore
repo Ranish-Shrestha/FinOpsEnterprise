@@ -5,6 +5,8 @@
 **/.angular/
 **/coverage/
 **/TestResults/
+**/playwright-report/
+**/test-results/
 .tools/
 .artifacts/
 .vs/

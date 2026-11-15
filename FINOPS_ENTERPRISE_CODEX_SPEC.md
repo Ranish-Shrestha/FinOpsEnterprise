@@ -4,7 +4,7 @@
 >
 > **How to use:** Open this file in VS Code and ask Codex (or another coding agent) to read it before making code changes. Work one milestone at a time. Do **not** attempt to implement the entire specification in one pass.
 >
-> **Current status (2026-11-14):** Phases 1–2 are complete, with hardening and CI added early. Phase 3 is complete: the expense workflow, budgets, the budget-vs-actual stored procedure, and execution-plan evidence. Phase 4 (reporting) is complete. Phase 5 (reliability: transactional outbox, worker, retries, idempotency) is complete with a local queue ([ADR 0005](docs/decisions/0005-messaging-outbox.md)). Phase 6 (quality and DevOps) is next. See §10 and [docs/verification.md](docs/verification.md).
+> **Current status (2026-11-14):** Phases 1–2 are complete, with hardening and CI added early. Phase 3 is complete: the expense workflow, budgets, the budget-vs-actual stored procedure, and execution-plan evidence. Phase 4 (reporting) is complete. Phase 5 (reliability: transactional outbox, worker, retries, idempotency) is complete with a local queue ([ADR 0005](docs/decisions/0005-messaging-outbox.md)). Phase 6 (quality and DevOps: agreed latency targets, OpenTelemetry, Playwright E2E in CI) is complete ([ADR 0006](docs/decisions/0006-quality-targets-and-telemetry.md)). Phase 7 (Azure and portfolio) is next. See §10 and [docs/verification.md](docs/verification.md).
 
 ## 1. Product overview
 
@@ -242,9 +242,15 @@ Status key: ✅ done · 🟡 partially verified · ⬜ not started.
   - Tests against real SQL Server cover redelivery, partial failure, lease expiry and concurrent workers.
   - Uses a local SQL-backed queue behind a Service Bus-shaped port; no Azure Service Bus adapter yet.
 
-### Phase 6 — Quality + DevOps (Weeks 9–10) ⬜
+### Phase 6 — Quality + DevOps (Weeks 9–10) ✅
 - E2E tests, telemetry (OpenTelemetry), performance work against **measured targets** (define e.g. p95 latency for the expense queue at a stated row count first). Basic CI already exists.
 - **Done when:** Pull-request CI builds and tests including E2E; key failures are observable; performance targets are met with before/after evidence.
+- *Status:* done, see [ADR 0006](docs/decisions/0006-quality-targets-and-telemetry.md).
+  - Targets were agreed before measuring and are enforced in CI.
+  - The access lookup went from 4 queries to 1; `GET /api/me` p95 went from 22.4 to 8.9 ms.
+  - OpenTelemetry traces span the API, SQL and the worker; outbox metrics are exported; the Aspire dashboard is available locally.
+  - Playwright journeys run in a CI job.
+  - Locally, the one-month report misses its 300 ms target because each durable audit commit is slow on Docker Desktop. CI will be the first measurement in the reference environment.
 
 ### Phase 7 — Azure + portfolio (Weeks 11–12) ⬜
 - Optional budget-aware Azure deployment, diagrams, demo data, README, screenshots, recorded walkthrough outline.
@@ -271,7 +277,7 @@ When acting on this repository:
 
 ## 12. Next instruction to paste into Codex
 
-> Read `FINOPS_ENTERPRISE_CODEX_SPEC.md`, `README.md` and `docs/requirements-review.md`, and examine the repository. Start **Phase 6 only**. Work on the `main` branch. First propose measurable targets (for example p95 latency of `GET /api/expenses?status=Submitted` at a stated row count, and outbox delivery latency) and ask me to confirm them. Then present a short plan: Playwright end-to-end tests against mock-mode personas (approval flow first) running in CI, OpenTelemetry traces and metrics for the API and the worker (including outbox backlog and dead-letter counts), and before/after performance evidence against the agreed targets. Run all tests including `Category=Database`, and update `docs/verification.md` with exact results.
+> Read `FINOPS_ENTERPRISE_CODEX_SPEC.md`, `README.md` and `docs/requirements-review.md`, and examine the repository. Start **Phase 7 only**. Work on the `main` branch. First confirm with me whether to deploy to Azure at all (cost), and if so the budget, region and services (for example Azure Container Apps for the API and worker, Azure SQL Database serverless, Static Web Apps for the UI, Key Vault, managed identity, and Application Insights or an OTLP collector), and record it as an ADR. Never hard-code secrets. Then present a short plan: infrastructure as code (Bicep), a CD workflow gated on CI, real Entra sign-in for the deployed app, a portfolio README with screenshots and a demo walkthrough. Do not create paid resources without my explicit approval.
 
 ## 13. Portfolio demonstration checklist
 
@@ -282,7 +288,7 @@ When acting on this repository:
 - [x] Complex EF Core/LINQ queries plus SQL optimization evidence.
 - [x] SSRS/RDL reports with safe permissions and export (API-rendered PDF and Excel; RDL files not yet rendered on SSRS).
 - [x] Automated unit, integration, and authorization tests.
-- [ ] Structured logging, monitoring, and health checks (logging + health done; monitoring pending).
+- [x] Structured logging, monitoring, and health checks (OpenTelemetry traces, metrics and logs; alerts defined but not deployed).
 - [x] Background processing and idempotency (local SQL-backed queue; Service Bus adapter optional in Phase 7).
 - [ ] Working local setup and CI/CD pipeline (local setup + CI done; CD pending).
 - [ ] Optional cloud deployment with no hard-coded secrets.

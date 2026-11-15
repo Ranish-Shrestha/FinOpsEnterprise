@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using FinOps.Application.Common;
 using FinOps.Application.Identity;
@@ -181,7 +182,8 @@ public sealed class ExpenseWorkflow(IExpenseStore store, IExpenseReader reader, 
             var now = clock.GetUtcNow();
             var payload = new ExpenseStatusChanged(expense.Id, expense.RequesterId, expense.DepartmentId, expense.Amount,
                 expense.Currency, actor.User.Id, now);
-            store.Add(OutboxMessage.Create(Guid.NewGuid(), eventType, payload.Serialize(), actor.CorrelationId, now));
+            store.Add(OutboxMessage.Create(Guid.NewGuid(), eventType, payload.Serialize(), actor.CorrelationId, now,
+                Activity.Current?.Id));
         }
 
         try
@@ -195,6 +197,7 @@ public sealed class ExpenseWorkflow(IExpenseStore store, IExpenseReader reader, 
                 "Someone else changed the expense at the same time. Reload it and try again.");
         }
 
+        FinOpsDiagnostics.ExpenseTransitions.Add(1, new KeyValuePair<string, object?>("action", action));
         return Result<ExpenseDetailDto>.Ok((await DetailForAsync(actor.User, id, cancellationToken))!);
     }
 
@@ -217,6 +220,8 @@ public sealed class ExpenseWorkflow(IExpenseStore store, IExpenseReader reader, 
     private async Task RecordDenialAsync(Actor actor, string action, Guid? resourceId, string reason,
         CancellationToken cancellationToken)
     {
+        FinOpsDiagnostics.AccessDenials.Add(1, new KeyValuePair<string, object?>("action", action),
+            new KeyValuePair<string, object?>("reason", reason));
         store.DiscardChanges();
         store.Add(Audit(actor, action, resourceId, AuditOutcome.Denied, new { reason }));
         await store.SaveChangesAsync(null, null, cancellationToken);

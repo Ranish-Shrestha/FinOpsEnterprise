@@ -32,5 +32,5 @@ The specification is coherent for a staged portfolio project. The modular monoli
   3. Export paginated reports from the API (for example QuestPDF and ClosedXML), and keep the RDL files as a learning artifact.
 
   UI report parameters alone can never enforce department isolation.
-- **Phase 6:** operational budgets and performance targets must be measurable (for example p95 latency of the expense queue at N rows) before adding caching or scaling.
-- **End-to-end tests:** use Playwright against mock-mode personas, starting with the Phase 3 approval flow.
+- **Phase 6: decided 2026-11-14, [ADR 0006](decisions/0006-quality-targets-and-telemetry.md).** The targets were agreed before measuring: queue p95 < 150 ms, my expenses < 100 ms, one-month report < 300 ms (60k expenses, full HTTP stack), and outbox delivery < 3 s. CI is the reference environment. No caching was added; the measured fix was the per-request access lookup (4 queries → 1).
+- **End-to-end tests:** done in Phase 6. Playwright runs against mock-mode personas on an isolated stack, covering the approval flow through the worker, department isolation and a report download.

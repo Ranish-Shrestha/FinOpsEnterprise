@@ -31,6 +31,46 @@ Pop-Location
 
 ---
 
+## 2026-11-14: Phase 6, quality and DevOps (targets, telemetry, E2E)
+
+Scope: [ADR 0006](decisions/0006-quality-targets-and-telemetry.md). The owner confirmed the targets before measuring. Worked on `main`.
+
+| Check | Result |
+| --- | --- |
+| .NET locked restore and Release build | Passed; 0 warnings, 0 errors. New packages: OpenTelemetry.Extensions.Hosting, Exporter.OpenTelemetryProtocol, Instrumentation.AspNetCore and Instrumentation.SqlClient, all 1.20.1. No NuGet audit warnings |
+| Unit tests | 131 passed (new: trace-parent validation) |
+| HTTP tests (`Category!=Database`) | 40 passed (new: telemetry registered only with an OTLP endpoint; invalid endpoint fails at startup) |
+| Real SQL Server tests (`Category=Database`) | 68 passed. New: 2 `PerformanceTests` and 2 `TelemetryTests`. `MessagingIntegrationTests` was updated for the handler order |
+| EF model drift | None after migration `OutboxTraceContext` (adds `TraceParent`) |
+| Angular | Typecheck clean; 33 tests passed; production build 243.2 kB initial |
+| Playwright E2E (`npm run e2e`) | 3 journeys passed: 3 consecutive runs, then 2 more with telemetry exporting. Run on an isolated stack against a throwaway SQL Server container (since removed) |
+| Telemetry, end to end | With the Aspire dashboard 13.6.2, one trace showed `POST /api/expenses/{id}/post`, its SQL, then the worker's `process expense.posted.v1` with both handler spans. The worker's outbox gauges appeared under Metrics |
+
+Latency on the development laptop (Windows, Docker Desktop), final run:
+
+| Scenario | p50 | p95 | Target p95 | Result |
+| --- | ---: | ---: | ---: | --- |
+| Manager approval queue | 10.3 ms | 15.0 ms | 150 ms | met |
+| Employee: my expenses | 9.2 ms | 14.4 ms | 100 ms | met |
+| Budget vs. actual, one month | 76.2 ms | 399.7 ms | 300 ms | **missed locally**: the durable audit commit alone had p95 252.5 ms on this disk |
+| Outbox delivery (20 postings) | 1.19 s | 2.49 s | 3 s | met |
+
+Before/after, measured back to back: `GET /api/me` went from p95 22.4 ms to 8.9 ms, and the queue from 38.6 ms to 26.2 ms. See [performance](performance/expense-queries.md#http-latency-targets-phase-6).
+
+Found and fixed during this phase:
+
+- **Four queries per request.** The per-request access lookup made four sequential queries; it now makes one.
+- **Notification before the money effect (from E2E).** The "posted, reimbursement scheduled" notification could appear before the reimbursement committed. The reimbursement handler now runs first, and a failure stops the later handlers. ADR 0005 is amended.
+- **Batch order.** A claimed batch was processed in GUID order; it is now oldest first.
+
+Not verified:
+
+- **The CI run itself** (the new `e2e` job, the enforced targets on `ubuntu-24.04`), until the change is pushed. Whether CI meets the report target is unknown.
+- **Alerts:** described in [observability](operations/observability.md), but not configured anywhere.
+- **Load or concurrency at scale:** the requests are sequential, from one client.
+
+---
+
 ## 2026-11-14: Phase 5, reliability (outbox, worker, idempotency)
 
 Scope: [ADR 0005](decisions/0005-messaging-outbox.md). Broker choice: a local SQL-backed queue behind a Service Bus-shaped port, chosen by the owner over Azure Service Bus or its emulator. Worked on `main`.

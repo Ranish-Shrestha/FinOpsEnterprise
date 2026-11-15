@@ -15,7 +15,8 @@ A portfolio-quality internal financial operations platform: ASP.NET Core 10, Ang
 | 3b. Budgets and SQL | Monthly budgets, budget vs. actual via a stored procedure, covering indexes with execution-plan evidence | Done ([evidence](docs/performance/expense-queries.md)) |
 | 4. Reporting | Five reports from parameterized stored procedures, as an in-app preview, PDF or Excel; matching SSRS RDL files; server-side department isolation; audited exports | Done ([ADR 0004](docs/decisions/0004-report-access.md)); RDL files not rendered on a real SSRS server |
 | 5. Reliability | Transactional outbox written with each approve/reject/post; background worker with leases, exponential retries, dead-lettering and admin replay; idempotent handlers (one reimbursement per posted expense, in-app notifications) | Done ([ADR 0005](docs/decisions/0005-messaging-outbox.md)); local SQL-backed queue, Azure Service Bus adapter not built |
-| 6–7 | DevOps and quality, Azure | Not started |
+| 6. Quality and DevOps | Agreed latency targets measured at 60k expenses (enforced in CI); OpenTelemetry traces, metrics and logs across API → SQL → worker, viewable in the Aspire dashboard; Playwright end-to-end journeys in CI | Done ([ADR 0006](docs/decisions/0006-quality-targets-and-telemetry.md)); CI enforcement not yet observed (see [verification](docs/verification.md)) |
+| 7 | Azure and portfolio | Not started |
 
 Full plan: [FINOPS_ENTERPRISE_CODEX_SPEC.md](FINOPS_ENTERPRISE_CODEX_SPEC.md). What has actually been run: [docs/verification.md](docs/verification.md).
 
@@ -28,7 +29,10 @@ Full plan: [FINOPS_ENTERPRISE_CODEX_SPEC.md](FINOPS_ENTERPRISE_CODEX_SPEC.md). W
   - HTTP tests for the 401/403/429 matrix.
   - Real SQL Server tests through Testcontainers. EF InMemory is never used.
   - Angular component, service and interceptor tests.
+  - Playwright end-to-end journeys against the real API, worker and SQL Server.
+  - Latency targets measured at 60,000 expenses, with before/after evidence.
 - **Reliable background processing.** Business events are written in the same transaction as the change, delivered at least once by a worker, and handled idempotently. Tests prove no duplicate effect under redelivery, partial failure, expired leases and concurrent workers.
+- **Observability.** One OpenTelemetry trace follows a business action from the HTTP request through SQL to the background worker. Outbox backlog, dead letters and delivery latency are metrics.
 - **Operational basics.** Liveness and readiness, Problem Details, correlation IDs in structured logs, security headers, rate limiting, and migrations that are never applied automatically.
 
 ## Repository layout
@@ -48,13 +52,14 @@ docs/
   architecture/overview.md        Components, request lifecycle, data model
   security/identity-authorization.md  Boundaries, permissions, personas, Entra setup
   design/phase3-expenses.md       Expense and budget rules (accepted)
-  performance/expense-queries.md  Execution-plan evidence, before and after
-  decisions/                      ADRs 0001–0005
+  performance/expense-queries.md  Execution-plan and HTTP latency evidence, before and after
+  operations/observability.md     Telemetry, metrics, suggested alerts
+  decisions/                      ADRs 0001–0006
   requirements-review.md          Spec adjustments and open questions
   verification.md                 Dated log of what was run
 reports/SSRS/                     RDL report definitions (generated) and deployment notes
 .github/workflows/ci.yml          Build, tests, real-SQL tests, EF drift, Angular, audit
-docker-compose.yml                Local SQL Server only
+docker-compose.yml                Local SQL Server; optional Aspire dashboard (profile: observability)
 ```
 
 ## Prerequisites
@@ -142,6 +147,14 @@ dotnet run --project src/FinOps.Worker
 ```
 
 It uses the same user-secret connection string as the API, and its launch profile sets `DOTNET_ENVIRONMENT=Development`. Wait for `Outbox worker started`. Without it the app still works, but notifications and reimbursements wait in the outbox until the worker runs. You can start more than one: they never claim the same message at once, and a redelivered message never repeats an effect.
+
+### 4c. Optional: watch the telemetry
+
+```powershell
+docker compose --profile observability up -d aspire-dashboard
+```
+
+Open **http://localhost:18888**. The API and worker launch profiles already export to it. After posting an expense, the *Traces* view shows one trace containing the request, its SQL and the worker's processing. See [observability](docs/operations/observability.md).
 
 ### 5. Try the authorization rules
 
@@ -244,11 +257,31 @@ dotnet test FinOpsEnterprise.slnx --no-build --filter "Category!=Database"
 dotnet test tests/FinOps.IntegrationTests --no-build --filter "Category=Database"   # needs Docker
 
 Push-Location src/finops-web; npm run typecheck; npm test; npm run build; Pop-Location
+
+# Only the latency targets (prints p50/p95; enforced in CI or with FINOPS_PERF_ENFORCE=true)
+dotnet test tests/FinOps.IntegrationTests --no-build --filter "Category=Performance"
 ```
 
 - **Database tests:** each test class gets a disposable SQL Server container. It migrates, then seeds, exactly as in the quick start. They fail rather than skip when Docker is unavailable. The first run pulls about 1.5 GB.
 - **HTTP tests** use explicit doubles for persistence. They test routing, authorization wiring and error contracts, not SQL behavior.
-- **CI** runs all of the above, plus the EF drift check and a production dependency audit, on every push and pull request.
+- **Performance tests** are part of the database tests. They print p50/p95/p99 per endpoint and this machine's SQL commit latency. They fail only in CI, which is the reference environment for the targets.
+- **CI** runs all of the above, plus the EF drift check, the end-to-end tests and a production dependency audit, on every push and pull request.
+
+### End-to-end tests
+
+The Playwright journeys run against a **separate stack**: API on port 5199, UI on port 4300. They never touch a development stack on 4200/7143. You need an empty database, migrated and seeded:
+
+```powershell
+dotnet build FinOpsEnterprise.slnx -c Release
+$env:E2E_CONNECTION_STRING = "Server=127.0.0.1,14333;Database=FinOpsE2E;User Id=sa;Password=<YOUR_LOCAL_SQL_PASSWORD>;Encrypt=True;TrustServerCertificate=True"
+$env:ASPNETCORE_ENVIRONMENT = "Development"; $env:ConnectionStrings__FinOps = $env:E2E_CONNECTION_STRING
+dotnet ef database update --project src/FinOps.Infrastructure --startup-project src/FinOps.Api
+dotnet run --project src/FinOps.Api -- seed-demo-data
+Remove-Item Env:ConnectionStrings__FinOps
+Push-Location src/finops-web; npx playwright install chromium; npm run e2e; Pop-Location
+```
+
+Playwright starts the API and the UI, and its global setup starts the worker. On failure, traces and screenshots are in `src/finops-web/test-results`. Use a separate database, such as `FinOpsE2E` above: the tests add expenses.
 
 ## Troubleshooting
 
@@ -280,4 +313,6 @@ Press Ctrl+C in the API, worker and UI terminals, then run `docker compose stop`
 - [ADR 0003: Demo data out of migrations; HTTP hardening](docs/decisions/0003-hardening-and-demo-data.md)
 - [ADR 0004: Report access and rendering](docs/decisions/0004-report-access.md)
 - [ADR 0005: Transactional outbox and a swappable local queue](docs/decisions/0005-messaging-outbox.md)
+- [ADR 0006: Measured targets, OpenTelemetry and end-to-end tests](docs/decisions/0006-quality-targets-and-telemetry.md)
+- [Observability](docs/operations/observability.md)
 - [Requirements review and open questions](docs/requirements-review.md)

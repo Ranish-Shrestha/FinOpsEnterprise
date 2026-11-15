@@ -15,6 +15,7 @@ public sealed class OutboxMessage
     public const int MaximumPayloadLength = 4000;
     public const int MaximumErrorLength = 1000;
     public const int MaximumCorrelationIdLength = 64;
+    public const int MaximumTraceParentLength = 55;
 
     private OutboxMessage() { }
 
@@ -23,6 +24,9 @@ public sealed class OutboxMessage
     public string Type { get; private set; } = string.Empty;
     public string Payload { get; private set; } = string.Empty;
     public string? CorrelationId { get; private set; }
+
+    /// <summary>W3C <c>traceparent</c> of the request that wrote the message, so the worker's span joins that trace.</summary>
+    public string? TraceParent { get; private set; }
     public DateTimeOffset OccurredAtUtc { get; private set; }
 
     /// <summary>Number of times the message has been claimed (Service Bus "delivery count").</summary>
@@ -34,7 +38,8 @@ public sealed class OutboxMessage
     public DateTimeOffset? DeadLetteredAtUtc { get; private set; }
     public string? LastError { get; private set; }
 
-    public static OutboxMessage Create(Guid id, string type, string payload, string? correlationId, DateTimeOffset occurredAtUtc)
+    public static OutboxMessage Create(Guid id, string type, string payload, string? correlationId, DateTimeOffset occurredAtUtc,
+        string? traceParent = null)
     {
         if (id == Guid.Empty) throw new ArgumentException("A message ID is required.", nameof(id));
         ArgumentException.ThrowIfNullOrWhiteSpace(type);
@@ -50,7 +55,9 @@ public sealed class OutboxMessage
             Payload = payload,
             CorrelationId = correlationId is { Length: > MaximumCorrelationIdLength } ? correlationId[..MaximumCorrelationIdLength] : correlationId,
             OccurredAtUtc = occurredAtUtc,
-            NextAttemptAtUtc = occurredAtUtc
+            NextAttemptAtUtc = occurredAtUtc,
+            // Only a well-formed W3C value (55 chars); anything else is dropped rather than truncated.
+            TraceParent = traceParent is { Length: MaximumTraceParentLength } ? traceParent : null
         };
     }
 

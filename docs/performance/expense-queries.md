@@ -48,3 +48,49 @@ Also changed:
 - **Manager queue index choice.** The queue seeks `IX_ExpenseRequests_Status` rather than `IX_ExpenseRequests_ApprovalQueue`, because "or my own expense" spans departments. At 5% submitted that costs 62 reads. If submitted expenses become a large share of history, consider splitting the query into a `UNION` of the department branch and the own-expense branch.
 - **Unoptimized sorts and counts.** Sorting by `amount` or `expenseDate` isn't covered by an index; those sorts read more, which is acceptable for occasional use. The `COUNT(*)` for the paging total uses the same predicates and indexes but isn't measured separately.
 - **Scale.** 60,000 rows is a portfolio-scale dataset. The relative behavior (seek versus scan) is what matters. Absolute numbers will grow with the data.
+
+## HTTP latency targets (Phase 6)
+
+The targets were agreed before measuring ([ADR 0006](../decisions/0006-quality-targets-and-telemetry.md)). `tests/FinOps.IntegrationTests/PerformanceTests.cs` measures them through the full HTTP stack: routing, authentication, the per-request access lookup, authorization, EF Core and SQL Server.
+
+- **Data:** the same 60,000 expenses as above.
+- **Samples:** 20 warm-up requests, then 200 measured sequential requests per endpoint; 20 postings for the outbox.
+- **Enforcement:** CI enforces the targets. Local runs print them, together with the machine's own SQL costs.
+
+### Before and after: one query for the access lookup
+
+The first measurement showed every request spending 15–20 ms on the access lookup before doing any work. `UserAccessReader` ran four sequential queries (profile, roles, permissions, memberships). It now runs **one**, with the three collections projected into a single statement.
+
+Both columns were measured back to back on the same machine (Windows laptop, Docker Desktop, SQL Server 2022 CU28) on 2026-11-14:
+
+| Endpoint (p50 / p95, ms) | Before: 4 queries | After: 1 query | Target p95 |
+| --- | ---: | ---: | ---: |
+| Access lookup only (`GET /api/me`) | 15.9 / 22.4 | **6.6 / 8.9** | none |
+| Manager approval queue | 29.3 / 38.6 | **19.6 / 26.2** | 150 |
+| Employee: my expenses | 26.8 / 35.5 | **20.2 / 25.4** | 100 |
+| Budget vs. actual, one month (JSON) | 93.9 / 460.1 | 75.6 / 398.8 | 300 |
+| *Environment: one-row durable commit* | *66.9 / 360.1* | *65.3 / 340.3* | none |
+
+The final full run on the same laptop gave:
+
+- approval queue p95 15.0 ms;
+- my expenses p95 14.4 ms;
+- outbox delivery p50 1.19 s and p95 2.49 s (target 3 s).
+
+### The report is bound by one commit, not by its query
+
+- **Where the time goes:**
+  - the stored procedure takes about 7 ms;
+  - the Budgets panel endpoint, which runs the same procedure without writing, takes about 22 ms;
+  - the report endpoint also commits its `report.exported` audit row.
+- **Why that's slow here:** on this laptop a bare one-row commit has p95 250–360 ms. SQL Server's wait statistics show `WRITELOG` and `PAGEIOLATCH` waits on Docker Desktop's virtual disk. A `SELECT 1` round trip takes under 3 ms.
+- **What was not done:** the audit write keeps full durability. No delayed durability and no fire-and-forget, just to meet a number.
+- **What decides it:** CI. If CI misses the target as well, the owner chooses between auditing only file exports and relaxing the target.
+
+### Outbox delivery
+
+The real hosted worker polls every 2 s when idle. Postings are spread across the poll cycle, so the samples include the worst case (a message written just after a poll).
+
+- Delivery latency is the poll wait plus two handler commits.
+- Its p95 is therefore close to the poll interval plus the commit time.
+- In production, `finops.messaging.delivery.latency` reports the same quantity (see [observability](../operations/observability.md)).

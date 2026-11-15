@@ -55,6 +55,15 @@ public sealed class MessagingTests
     }
 
     [Fact]
+    public void Outbox_message_keeps_only_a_well_formed_trace_parent()
+    {
+        const string traceParent = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
+        Assert.Equal(traceParent, OutboxMessage.Create(Guid.NewGuid(), "t", "{}", null, Now, traceParent).TraceParent);
+        Assert.Null(OutboxMessage.Create(Guid.NewGuid(), "t", "{}", null, Now, "|hierarchical.id.").TraceParent);
+        Assert.Null(OutboxMessage.Create(Guid.NewGuid(), "t", "{}", null, Now).TraceParent);
+    }
+
+    [Fact]
     public void Only_dead_letters_can_be_replayed()
     {
         var message = OutboxMessage.Create(Guid.NewGuid(), "t", "{}", null, Now);

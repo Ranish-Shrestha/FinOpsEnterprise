@@ -26,11 +26,11 @@ internal sealed class SqlOutboxQueue(FinOpsDbContext db, TimeProvider clock) : I
         UPDATE next
         SET DeliveryCount = DeliveryCount + 1, LockToken = NEWID(), LockedUntilUtc = @lockedUntil
         OUTPUT inserted.Id, inserted.Type, inserted.Payload, inserted.CorrelationId, inserted.DeliveryCount,
-               inserted.LockToken, inserted.LockedUntilUtc;
+               inserted.LockToken, inserted.LockedUntilUtc, inserted.OccurredAtUtc, inserted.TraceParent;
         """;
 
     private sealed record ClaimRow(Guid Id, string Type, string Payload, string? CorrelationId, int DeliveryCount,
-        Guid LockToken, DateTimeOffset LockedUntilUtc);
+        Guid LockToken, DateTimeOffset LockedUntilUtc, DateTimeOffset OccurredAtUtc, string? TraceParent);
 
     public async Task<IReadOnlyList<ClaimedMessage>> ClaimAsync(int maxMessages, TimeSpan lease,
         CancellationToken cancellationToken)
@@ -42,8 +42,10 @@ internal sealed class SqlOutboxQueue(FinOpsDbContext db, TimeProvider clock) : I
                 new SqlParameter("@lockedUntil", System.Data.SqlDbType.DateTimeOffset) { Value = now + lease })
             .ToListAsync(cancellationToken);
 
-        return rows.OrderBy(r => r.Id).Select(r => new ClaimedMessage(
-            new IntegrationMessage(r.Id, r.Type, r.Payload, r.CorrelationId, r.DeliveryCount),
+        // OUTPUT returns rows in no particular order: process the batch oldest first (best effort; delivery stays
+        // at-least-once and handlers must not depend on order, see ADR 0005).
+        return rows.OrderBy(r => r.OccurredAtUtc).ThenBy(r => r.Id).Select(r => new ClaimedMessage(
+            new IntegrationMessage(r.Id, r.Type, r.Payload, r.CorrelationId, r.DeliveryCount, r.OccurredAtUtc, r.TraceParent),
             r.LockToken, r.LockedUntilUtc)).ToList();
     }
 

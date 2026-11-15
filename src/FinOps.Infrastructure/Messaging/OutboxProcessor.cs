@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using FinOps.Application.Common;
 using FinOps.Application.Messaging;
 using FinOps.Domain.Audit;
 using FinOps.Domain.Expenses;
@@ -18,6 +20,8 @@ namespace FinOps.Infrastructure.Messaging;
 /// <item>Each handler runs in its own DI scope and transaction; its effects and its <c>ProcessedMessages</c> row
 /// commit together. A handler that already committed for this message ID is skipped, so retries, lease-expiry
 /// redeliveries and replays never repeat a business effect.</item>
+/// <item>Handlers run in registration order, and a failure stops the remaining ones until the retry, so a later
+/// handler can rely on an earlier one's effect (the notification announces a reimbursement that exists).</item>
 /// <item>The message is completed only after all its handlers have committed.</item>
 /// <item>A failure abandons the message with exponential backoff; after <see cref="MessagingOptions.MaxDeliveryCount"/>
 /// deliveries, or immediately for a message that can never succeed, it is dead-lettered.</item>
@@ -53,6 +57,17 @@ public sealed class OutboxProcessor(IServiceScopeFactory scopes, IOptions<Messag
             ["DeliveryCount"] = message.DeliveryCount
         });
 
+        // One consumer span per delivery, parented to the request that wrote the message, so one trace shows
+        // the HTTP request, its SQL, and later the worker, its handlers and their SQL.
+        ActivityContext.TryParse(message.TraceParent, null, out var parent);
+        using var activity = FinOpsDiagnostics.ActivitySource.StartActivity($"process {message.Type}", ActivityKind.Consumer, parent);
+        activity?.SetTag("messaging.system", "finops.outbox");
+        activity?.SetTag("messaging.operation.type", "process");
+        activity?.SetTag("messaging.destination.name", message.Type);
+        activity?.SetTag("messaging.message.id", message.Id.ToString());
+        activity?.SetTag("finops.messaging.delivery_count", message.DeliveryCount);
+        activity?.SetTag("finops.correlation_id", message.CorrelationId);
+
         await using var scope = scopes.CreateAsyncScope();
         var queue = scope.ServiceProvider.GetRequiredService<IMessageQueue>();
 
@@ -73,9 +88,18 @@ public sealed class OutboxProcessor(IServiceScopeFactory scopes, IOptions<Messag
             foreach (var handlerName in handlerNames) await RunHandlerAsync(handlerName, message, cancellationToken);
 
             if (await queue.CompleteAsync(claimed, cancellationToken))
+            {
                 logger.LogInformation("Processed message with {HandlerCount} handler(s).", handlerNames.Count);
+                Settled(message, "completed");
+                if (message.OccurredAtUtc is { } occurred)
+                    FinOpsDiagnostics.DeliveryLatency.Record((clock.GetUtcNow() - occurred).TotalSeconds,
+                        new KeyValuePair<string, object?>("messaging.destination.name", message.Type));
+            }
             else
+            {
                 logger.LogWarning("Lock lost before completing; another worker owns the message. Effects are idempotent.");
+                Settled(message, "lock_lost");
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -90,21 +114,30 @@ public sealed class OutboxProcessor(IServiceScopeFactory scopes, IOptions<Messag
             var error = $"{ex.GetType().Name}: {ex.Message}";
             if (message.DeliveryCount >= Options.MaxDeliveryCount)
             {
+                MarkFailed(ex);
                 await DeadLetterAsync(queue, claimed, $"Failed after {message.DeliveryCount} deliveries. {error}", cancellationToken);
                 return;
             }
 
             var retryAt = clock.GetUtcNow() + RetryPolicy.DelayAfter(message.DeliveryCount, Options);
             logger.LogWarning(ex, "Message failed; retrying at {RetryAtUtc}.", retryAt);
+            MarkFailed(ex);
             await queue.AbandonAsync(claimed, retryAt, error, cancellationToken);
+            Settled(message, "retried");
         }
     }
 
     private async Task RunHandlerAsync(string handlerName, IntegrationMessage message, CancellationToken cancellationToken)
     {
+        using var activity = FinOpsDiagnostics.ActivitySource.StartActivity($"handle {handlerName}");
+        activity?.SetTag("finops.messaging.handler", handlerName);
         await using var scope = scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<FinOpsDbContext>();
-        if (await AlreadyProcessedAsync(db, message.Id, handlerName, cancellationToken)) return;
+        if (await AlreadyProcessedAsync(db, message.Id, handlerName, cancellationToken))
+        {
+            activity?.SetTag("finops.messaging.skipped", "already_processed");
+            return;
+        }
 
         var handler = scope.ServiceProvider.GetServices<IIntegrationEventHandler>().Single(h => h.Name == handlerName);
         await handler.HandleAsync(message, cancellationToken);
@@ -134,7 +167,21 @@ public sealed class OutboxProcessor(IServiceScopeFactory scopes, IOptions<Messag
         CancellationToken cancellationToken)
     {
         logger.LogError("Message dead-lettered: {Reason}", reason);
+        Activity.Current?.SetStatus(ActivityStatusCode.Error, "dead-lettered");
         await queue.DeadLetterAsync(claimed, reason, cancellationToken);
+        Settled(claimed.Message, "dead_lettered");
+    }
+
+    private static void Settled(IntegrationMessage message, string outcome) =>
+        FinOpsDiagnostics.MessagesSettled.Add(1, new KeyValuePair<string, object?>("messaging.destination.name", message.Type),
+            new KeyValuePair<string, object?>("outcome", outcome));
+
+    private static void MarkFailed(Exception ex)
+    {
+        var activity = Activity.Current;
+        if (activity is null) return;
+        activity.SetStatus(ActivityStatusCode.Error, ex.GetType().Name);
+        activity.AddException(ex);
     }
 
     private static bool IsUniqueViolation(DbUpdateException ex) =>
@@ -153,9 +200,12 @@ internal sealed class MessageEffects(FinOpsDbContext db) : IMessageEffects
 }
 
 /// <summary>The hosted loop: process batches back to back while there is work, then poll.</summary>
-internal sealed class OutboxWorker(OutboxProcessor processor, IOptions<MessagingOptions> options, TimeProvider clock,
-    ILogger<OutboxWorker> logger) : BackgroundService
+internal sealed class OutboxWorker(OutboxProcessor processor, IServiceScopeFactory scopes, IOptions<MessagingOptions> options,
+    TimeProvider clock, ILogger<OutboxWorker> logger) : BackgroundService
 {
+    private static readonly TimeSpan SampleInterval = TimeSpan.FromSeconds(15);
+    private DateTimeOffset nextSample = DateTimeOffset.MinValue;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var poll = TimeSpan.FromSeconds(options.Value.PollIntervalSeconds);
@@ -164,6 +214,7 @@ internal sealed class OutboxWorker(OutboxProcessor processor, IOptions<Messaging
         {
             try
             {
+                await SampleOutboxAsync(stoppingToken);
                 if (await processor.ProcessBatchAsync(stoppingToken) > 0) continue;
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -179,5 +230,22 @@ internal sealed class OutboxWorker(OutboxProcessor processor, IOptions<Messaging
             try { await Task.Delay(poll, clock, stoppingToken); }
             catch (OperationCanceledException) { break; }
         }
+    }
+
+    /// <summary>Feeds the backlog, dead-letter and oldest-pending gauges. Both counts use filtered indexes.</summary>
+    private async Task SampleOutboxAsync(CancellationToken cancellationToken)
+    {
+        var now = clock.GetUtcNow();
+        if (now < nextSample) return;
+        nextSample = now + SampleInterval;
+
+        await using var scope = scopes.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<FinOpsDbContext>();
+        var pending = db.OutboxMessages.Where(m => m.ProcessedAtUtc == null && m.DeadLetteredAtUtc == null);
+        var pendingCount = await pending.CountAsync(cancellationToken);
+        var oldest = await pending.OrderBy(m => m.NextAttemptAtUtc).Select(m => (DateTimeOffset?)m.OccurredAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+        var deadLettered = await db.OutboxMessages.CountAsync(m => m.DeadLetteredAtUtc != null, cancellationToken);
+        FinOpsDiagnostics.ReportOutbox(pendingCount, deadLettered, oldest is { } o ? Math.Max(0, (now - o).TotalSeconds) : 0);
     }
 }

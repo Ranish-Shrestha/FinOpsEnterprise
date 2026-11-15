@@ -53,8 +53,10 @@ public static class DependencyInjection
             .ValidateOnStart();
         services.AddScoped<IMessageQueue, SqlOutboxQueue>();
         services.AddScoped<IMessageEffects, MessageEffects>();
-        services.AddScoped<IIntegrationEventHandler, ExpenseNotificationHandler>();
+        // Handlers run in registration order and a failure stops the rest until the retry. The reimbursement goes
+        // first, so the "posted, reimbursement scheduled" notification can never appear before the money effect.
         services.AddScoped<IIntegrationEventHandler, ReimbursementHandler>();
+        services.AddScoped<IIntegrationEventHandler, ExpenseNotificationHandler>();
         services.AddSingleton<OutboxProcessor>();
         services.AddScoped<INotificationInbox, NotificationInbox>();
         services.AddScoped<IOutboxOperations, OutboxOperations>();

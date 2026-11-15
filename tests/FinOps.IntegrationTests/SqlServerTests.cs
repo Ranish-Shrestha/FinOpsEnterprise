@@ -65,14 +65,18 @@ public sealed class SqlServerFixture : IAsyncLifetime
         return await action(scope.ServiceProvider.GetRequiredService<FinOpsDbContext>());
     }
 
-    internal sealed class DatabaseApiFactory(string connectionString) : WebApplicationFactory<Program>
+    internal sealed class DatabaseApiFactory(string connectionString, IDictionary<string, string?>? settings = null)
+        : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
+            var configuration = new Dictionary<string, string?> { ["ConnectionStrings:FinOps"] = connectionString };
+            foreach (var (key, value) in settings ?? new Dictionary<string, string?>()) configuration[key] = value;
             builder.UseEnvironment("Development");
             builder.ConfigureLogging(logging => logging.ClearProviders());
-            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
-                new Dictionary<string, string?> { ["ConnectionStrings:FinOps"] = connectionString }));
+            // UseSetting makes values visible while Program.cs registers services (for example the rate limiter).
+            foreach (var (key, value) in configuration) builder.UseSetting(key, value);
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(configuration));
         }
     }
 }

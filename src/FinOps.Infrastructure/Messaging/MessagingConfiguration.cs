@@ -37,6 +37,7 @@ internal sealed class OutboxMessageConfiguration : IEntityTypeConfiguration<Outb
         builder.Property(x => x.Payload).HasMaxLength(OutboxMessage.MaximumPayloadLength);
         builder.Property(x => x.CorrelationId).HasMaxLength(OutboxMessage.MaximumCorrelationIdLength);
         builder.Property(x => x.LastError).HasMaxLength(OutboxMessage.MaximumErrorLength);
+        builder.Property(x => x.TraceParent).HasMaxLength(OutboxMessage.MaximumTraceParentLength).IsUnicode(false);
 
         // The claim query: WHERE ProcessedAtUtc IS NULL AND DeadLetteredAtUtc IS NULL AND NextAttemptAtUtc <= @now
         // ORDER BY NextAttemptAtUtc. Filtered, so the index holds only the (small) backlog, never processed history.

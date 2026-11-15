@@ -30,7 +30,8 @@ public sealed record ExpenseStatusChanged(Guid ExpenseId, Guid RequesterId, Guid
 }
 
 /// <summary>A claimed message as a handler sees it. <see cref="Id"/> is stable across retries and replays.</summary>
-public sealed record IntegrationMessage(Guid Id, string Type, string Payload, string? CorrelationId, int DeliveryCount);
+public sealed record IntegrationMessage(Guid Id, string Type, string Payload, string? CorrelationId, int DeliveryCount,
+    DateTimeOffset? OccurredAtUtc = null, string? TraceParent = null);
 
 /// <summary>A message claimed from the queue under a lease. Settling it requires the matching lock token.</summary>
 public sealed record ClaimedMessage(IntegrationMessage Message, Guid LockToken, DateTimeOffset LockedUntilUtc);

@@ -4,6 +4,9 @@ using FinOps.Api.Security;
 using FinOps.Application.Departments;
 using FinOps.Application.Identity;
 using FinOps.Infrastructure;
+using FinOps.Infrastructure.Observability;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Trace;
 using FinOps.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -19,6 +22,10 @@ builder.Services.AddOpenApi();
 builder.Services.AddInfrastructure();
 builder.Services.AddFinOpsSecurity(builder.Configuration, builder.Environment);
 builder.Services.AddApiRateLimiting(builder.Configuration);
+builder.AddFinOpsTelemetry("finops-api",
+    tracing: t => t.AddAspNetCoreInstrumentation(options =>
+        options.Filter = context => !context.Request.Path.StartsWithSegments("/health")),
+    metrics: m => m.AddAspNetCoreInstrumentation());
 
 var app = builder.Build();
 

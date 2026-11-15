@@ -700,6 +700,11 @@ namespace FinOps.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("ProcessedAtUtc")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<string>("TraceParent")
+                        .HasMaxLength(55)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(55)");
+
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasMaxLength(100)

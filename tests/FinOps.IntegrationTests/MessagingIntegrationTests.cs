@@ -167,14 +167,14 @@ public sealed class MessagingIntegrationTests(SqlServerFixture fixture)
         await using (var plain = Worker(clock)) await DrainAsync(plain);
         var (expenseId, messageId) = await PostedExpenseWithEventAsync();
 
-        // The reimbursement handler times out once for this expense; the notification handler succeeds.
+        // The reimbursement (first handler) commits; the notification (second) then times out once for this expense.
         var faults = new FaultSwitch();
         await using var worker = Worker(clock, services =>
         {
-            services.Remove(services.Single(d => d.ImplementationType == typeof(ReimbursementHandler)));
+            services.Remove(services.Single(d => d.ImplementationType == typeof(ExpenseNotificationHandler)));
             services.AddSingleton(faults);
             services.AddScoped<IIntegrationEventHandler>(sp => new FailingOnceFor(expenseId,
-                ActivatorUtilities.CreateInstance<ReimbursementHandler>(sp), sp.GetRequiredService<FaultSwitch>()));
+                ActivatorUtilities.CreateInstance<ExpenseNotificationHandler>(sp), sp.GetRequiredService<FaultSwitch>()));
         });
 
         await DrainAsync(worker);
@@ -182,10 +182,10 @@ public sealed class MessagingIntegrationTests(SqlServerFixture fixture)
         Assert.Null(afterFailure.ProcessedAtUtc);
         Assert.Equal(1, afterFailure.DeliveryCount);
         Assert.Null(afterFailure.LockToken);
-        Assert.StartsWith("TimeoutException", afterFailure.LastError);
+        Assert.Equal("TimeoutException: Simulated notification service timeout.", afterFailure.LastError);
         Assert.Equal(clock.GetUtcNow().AddSeconds(5), afterFailure.NextAttemptAtUtc); // first backoff step
-        Assert.Equal(1, await NotificationsForMessageAsync(messageId));               // committed on its own
-        Assert.Equal(0, await ReimbursementsForAsync(expenseId));
+        Assert.Equal(1, await ReimbursementsForAsync(expenseId));                    // committed on its own
+        Assert.Equal(0, await NotificationsForMessageAsync(messageId));
 
         await DrainAsync(worker); // not due yet
         Assert.Equal(1, (await MessageAsync(messageId)).DeliveryCount);
@@ -195,8 +195,10 @@ public sealed class MessagingIntegrationTests(SqlServerFixture fixture)
         var done = await MessageAsync(messageId);
         Assert.NotNull(done.ProcessedAtUtc);
         Assert.Equal(2, done.DeliveryCount);
-        Assert.Equal(1, await ReimbursementsForAsync(expenseId));
-        Assert.Equal(1, await NotificationsForMessageAsync(messageId)); // not repeated by the retry
+        Assert.Equal(1, await ReimbursementsForAsync(expenseId));      // the retry did not pay twice
+        Assert.Equal(1, await NotificationsForMessageAsync(messageId));
+        Assert.Equal(1, await fixture.WithDbAsync(db => db.AuditEvents.CountAsync(
+            a => a.ResourceId == expenseId && a.Action == "reimbursement.scheduled")));
         Assert.Equal([NotificationHandler, ReimbursementHandlerName], await fixture.WithDbAsync(db => db.ProcessedMessages
             .Where(p => p.MessageId == messageId).OrderBy(p => p.Handler).Select(p => p.Handler).ToListAsync()));
     }
@@ -517,7 +519,7 @@ public sealed class MessagingIntegrationTests(SqlServerFixture fixture)
             if (ExpenseStatusChanged.Deserialize(message.Payload).ExpenseId == expenseId && faults.Calls == 0)
             {
                 faults.Count();
-                throw new TimeoutException("Simulated payment service timeout.");
+                throw new TimeoutException("Simulated notification service timeout.");
             }
 
             return inner.HandleAsync(message, cancellationToken);
