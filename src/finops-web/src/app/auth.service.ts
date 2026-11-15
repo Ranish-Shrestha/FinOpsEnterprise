@@ -60,13 +60,13 @@ export class AuthService {
     const query = new URLSearchParams({ client_id: authConfig.spaClientId, response_type: 'code',
       redirect_uri: authConfig.redirectUri, response_mode: 'query', scope: `openid profile ${authConfig.apiScope}`,
       state, code_challenge: this.base64Url(new Uint8Array(digest)), code_challenge_method: 'S256' });
-    location.assign(`https://login.microsoftonline.com/${authConfig.tenantId}/oauth2/v2.0/authorize?${query}`);
+    this.navigate(`https://login.microsoftonline.com/${authConfig.tenantId}/oauth2/v2.0/authorize?${query}`);
   }
 
   signOut(): void {
     this.clearSession();
     if (!authConfig.mockMode) {
-      location.assign(`https://login.microsoftonline.com/${authConfig.tenantId}/oauth2/v2.0/logout`
+      this.navigate(`https://login.microsoftonline.com/${authConfig.tenantId}/oauth2/v2.0/logout`
         + `?post_logout_redirect_uri=${encodeURIComponent(authConfig.redirectUri)}`);
     }
   }
@@ -90,6 +90,11 @@ export class AuthService {
     if (authConfig.mockMode) return { 'X-Development-User': this.persona() };
     const token = sessionStorage.getItem(keys.accessToken);
     return token && this.hasUnexpiredToken() ? { Authorization: `Bearer ${token}` } : {};
+  }
+
+  /** Leaves the app for Entra. A method so tests can observe the destination instead of navigating. */
+  protected navigate(url: string): void {
+    location.assign(url);
   }
 
   private hasUnexpiredToken(): boolean {

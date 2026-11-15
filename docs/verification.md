@@ -31,6 +31,78 @@ Pop-Location
 
 ---
 
+## 2026-11-14: Review of Phases 1 and 2
+
+A re-check of both phases against their "Done when" criteria, after Phase 7.
+
+**Phase 1: clone, configure and run.** Done literally: a fresh `git clone` of `acf60be`, then the README quick start against a throwaway database (`FinOpsCloneCheck`, dropped afterwards). The connection string came from an environment variable, so the clone used no existing user secrets.
+
+| Step | Result |
+| --- | --- |
+| `dotnet tool restore`, locked build with warnings as errors | Passed |
+| `dotnet ef database update` | Passed |
+| `seed-demo-data`, then again | 59 rows, then 0 rows |
+| `/health`, `/health/ready`, `/openapi/v1.json` | 200, 200, 200 |
+| `/api/me`: anonymous, Demo Employee, Demo Former Employee | 401, 200, 403 |
+| `/api/departments` as Demo Employee | 200, Demo Engineering only |
+| `npm ci`, production build, Angular tests | Passed; 244 kB initial (66 kB transferred); 41 passed |
+
+**Phase 2: what was untested, and is now tested without a tenant.**
+
+- **`JwtValidationTests` (17, HTTP):**
+  - What runs: the API's real Entra JWT bearer configuration, in the Production environment with no mock scheme.
+  - What is swapped: only Entra's metadata document. A local RSA key is published under the tenant's v2 issuer, so no network call is made.
+  - Accepted:
+    - a valid token;
+    - expiry within the 2-minute clock skew.
+  - 401, before any database lookup:
+    - wrong issuer, or the Entra **v1** issuer;
+    - wrong audience;
+    - an untrusted signing key;
+    - expired, or not yet valid;
+    - unsigned (`alg: none`);
+    - a tampered payload;
+    - a value that is not a JWT;
+    - a missing token, which gets a `Bearer` challenge;
+    - the development header.
+  - 403:
+    - no `FinOps.Access` scope, including when it appears only in a `roles` claim;
+    - an unprovisioned user;
+    - a token claiming roles or permissions the database doesn't grant.
+- **Mutation check (API):** turning off issuer, audience and lifetime validation made 5 tests fail.
+- **`auth-entra.spec.ts` (12, Angular):** the browser's PKCE flow, which previously had no tests. It covers:
+  - the authorize URL;
+  - the S256 challenge, matched against the stored verifier;
+  - a fresh state and verifier on each sign-in;
+  - the token request, which carries no client secret;
+  - URL cleanup after the redirect;
+  - rejecting a state mismatch, or a redirect with no sign-in started in the tab, without calling Entra;
+  - one-time values consumed even on failure;
+  - a failed exchange;
+  - expired tokens not sent;
+  - no development header;
+  - 401 handling;
+  - sign-out.
+- **Mutation check (browser):** removing the state comparison made 2 tests fail.
+
+**Fixed: the SPA setup instructions for real Entra.** Since Phase 7, `public/config.json` (committed with `"mockMode": true`) overrides `auth.config.ts` at startup. The README and [identity-authorization.md](security/identity-authorization.md#entra-registration-real-sso) still said to edit `auth.config.ts`, so following them would have stayed in mock mode. They now point to `config.json`.
+
+**Code change:** `AuthService` now leaves the app through a `navigate` method, so tests can see the destination. Behavior is unchanged.
+
+| Check | Result |
+| --- | --- |
+| .NET build | 0 warnings, 0 errors |
+| Unit tests | **131 passed** |
+| Integration tests (HTTP and real SQL Server) | **140 passed**: 123 before, plus 17 |
+| Angular typecheck | Passed |
+| Angular tests | **53 passed**: 41 before, plus 12 |
+
+The .NET tests were built into a separate output folder, because a running API locked `bin/`. In that layout one test (`Rdl_datasets_call_procedures_that_exist_with_matching_parameters`) can't find the repository root from its output folder, so it was re-run on its own in the normal layout.
+
+**Still not verified:** a sign-in against a real Entra tenant. The tests prove the API rejects what it should and accepts a correctly formed v2 token. They can't prove the tenant's app registrations issue that token, which needs the v2 token version, the `FinOps.Access` scope and the audience. That last step is the only part of Phase 2 left.
+
+---
+
 ## 2026-11-14: Phase 7, Azure deployment (templates and CD) and portfolio
 
 Scope: [ADR 0007](decisions/0007-azure-deployment.md). The owner chose to write and validate the templates and CD workflow but **not deploy yet**. Worked on `main`.

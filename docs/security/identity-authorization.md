@@ -102,7 +102,19 @@ You need an Entra tenant in which you can register applications. The free tier i
    ```
 
    With v2 tokens the `aud` claim is the API's client ID GUID, not the `api://` URI. If you get 401 with an audience error, set `Security:Audience` to the client ID instead.
-4. **SPA configuration.** In `src/finops-web/src/app/auth.config.ts`, set `tenantId`, `spaClientId`, `apiScope` and `mockMode: false`. These values are public identifiers, not secrets.
+4. **SPA configuration.** Edit `src/finops-web/public/config.json`, which is loaded at startup and overrides the defaults in `auth.config.ts`. Editing `auth.config.ts` alone has no effect while this file says `"mockMode": true`. These values are public identifiers, not secrets, but keep the change out of commits so the repository stays in mock mode:
+
+   ```json
+   {
+     "apiBaseUrl": "",
+     "mockMode": false,
+     "tenantId": "<tenant-id GUID>",
+     "spaClientId": "<SPA client-id GUID>",
+     "apiScope": "api://<api-client-id>/FinOps.Access"
+   }
+   ```
+
+   Keep `apiBaseUrl` empty locally, because the dev server proxies `/api`. The app refuses to start if `tenantId` or `spaClientId` is not a GUID, or if `apiScope` doesn't end with `/FinOps.Access`.
 5. **Provision the user.** Insert a row in `identity.UserProfiles` with the user's Entra **object ID** (`oid`), not their email. Assign a role in `identity.UserRoles` and, if needed, a membership in `identity.DepartmentMemberships`. There is no admin UI yet.
 
 ## Deployed database access

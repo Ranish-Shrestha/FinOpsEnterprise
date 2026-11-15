@@ -221,7 +221,7 @@ After pulling changes that add migrations, run `dotnet ef database update` (as i
 1. Register the API and SPA apps.
 2. Set the API's token version to v2.
 3. Configure the tenant and audience through user secrets.
-4. Set `mockMode: false` in `auth.config.ts`.
+4. Set `mockMode: false` and the Entra IDs in `src/finops-web/public/config.json`. It overrides `auth.config.ts` at startup.
 5. Provision your user by Entra object ID.
 
 Step-by-step: [docs/security/identity-authorization.md](docs/security/identity-authorization.md#entra-registration-real-sso).

@@ -213,7 +213,7 @@ Status key: ✅ done · 🟡 partially verified · ⬜ not started.
 ### Phase 2 — Identity + authorization (Weeks 2–3) 🟡
 - Add Entra ID integration, OIDC/OAuth2 flow, JWT validation, role/permission policy, and ownership/department checks.
 - **Done when:** Valid users can sign in; permission and cross-department access tests pass.
-- *Status:* access tests pass against real SQL Server; a real Entra sign-in still needs to be verified with a tenant. Hardening and CI were pulled forward from Phase 6 (ADR 0003).
+- *Status:* access tests pass against real SQL Server. The production JWT validation is tested with locally signed tokens: issuer, audience, signature, lifetime, scope and provisioning. The browser's PKCE flow is unit tested. Only a sign-in against a real Entra tenant remains ([verification](docs/verification.md)). Hardening and CI were pulled forward from Phase 6 (ADR 0003).
 
 ### Phase 3 — Finance workflows + SQL (Weeks 4–5) ✅
 - Expense CRUD, submission, approvals, budget tracking, migrations, LINQ, stored procedures, indexes.

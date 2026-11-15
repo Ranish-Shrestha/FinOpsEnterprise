@@ -40,7 +40,8 @@ internal sealed class ApiFactory(
     string environment = "Development",
     IDepartmentReader? reader = null,
     bool useTokenLikeTestScheme = false,
-    IDictionary<string, string?>? settings = null) : WebApplicationFactory<Program>
+    IDictionary<string, string?>? settings = null,
+    Action<IServiceCollection>? testServices = null) : WebApplicationFactory<Program>
 {
     public CountingUserAccessReader UserAccess { get; } = new();
 
@@ -70,6 +71,8 @@ internal sealed class ApiFactory(
             services.RemoveAll<IConfigureOptions<HealthCheckServiceOptions>>();
             services.AddHealthChecks().AddCheck("database", () => HealthCheckResult.Unhealthy(), tags: ["ready"]);
         });
+
+        if (testServices is not null) builder.ConfigureTestServices(testServices);
 
         if (useTokenLikeTestScheme)
         {
