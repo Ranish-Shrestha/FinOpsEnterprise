@@ -12,6 +12,7 @@ internal static class AdminCommands
     internal const string SeedDemoData = "seed-demo-data";
     internal const string Migrate = "migrate";
     internal const string GrantAppAccess = "grant-app-access";
+    internal const string ProvisionUser = "provision-user";
 
     /// <summary>
     /// Runs a command if the arguments name one; returns its exit code, or null to start the web host. Commands get a
@@ -19,7 +20,7 @@ internal static class AdminCommands
     /// </summary>
     internal static async Task<int?> TryRunAsync(string[] args)
     {
-        var command = args.FirstOrDefault(a => a is SeedDemoData or Migrate or GrantAppAccess);
+        var command = args.FirstOrDefault(a => a is SeedDemoData or Migrate or GrantAppAccess or ProvisionUser);
         if (command is null) return null;
 
         var builder = WebApplication.CreateSlimBuilder(args);
@@ -29,6 +30,10 @@ internal static class AdminCommands
             Console.Error.WriteLine("seed-demo-data is available only when ASPNETCORE_ENVIRONMENT=Development.");
             return 1;
         }
+
+        // Validate before touching the database.
+        ProvisionRequest? provision = null;
+        if (command == ProvisionUser && (provision = ProvisionRequest.Parse(args)) is null) return ProvisionUsage();
 
         builder.Services.AddInfrastructure();
         await using var app = builder.Build();
@@ -60,9 +65,55 @@ internal static class AdminCommands
                 await DatabaseAdministration.GrantRuntimeAccessAsync(db, args[index + 1], clientId);
                 Console.WriteLine($"Runtime access granted to '{args[index + 1]}'.");
                 return 0;
+
+            // provision-user --object-id <oid> --name <name> --email <email> --role <role> [--department <name>]
+            case ProvisionUser:
+                try
+                {
+                    await DatabaseAdministration.ProvisionUserAsync(db, provision!.ObjectId, provision.Name, provision.Email,
+                        provision.Role, provision.Department);
+                }
+                catch (Microsoft.Data.SqlClient.SqlException error) when (error.Number is 50101 or 50102)
+                {
+                    Console.Error.WriteLine(error.Message);
+                    return 2;
+                }
+
+                Console.WriteLine($"Provisioned {provision.Name} ({provision.ObjectId}) as {provision.Role}"
+                    + (provision.Department is null ? "." : $" in {provision.Department}."));
+                return 0;
         }
 
         return null;
+    }
+
+    private static int ProvisionUsage()
+    {
+        Console.Error.WriteLine("""
+            Usage: provision-user --object-id <Entra object ID> --name "<display name>" --email <email>
+                                  --role <Employee|Manager|FinanceOfficer|Administrator> [--department "<Demo Engineering|Demo Finance|Demo Operations>"]
+            The object ID is shown on the app's /access-denied page after the user's first sign-in.
+            """);
+        return 2;
+    }
+
+    /// <summary>The arguments of <c>provision-user</c>; null when one is missing or the object ID is not a GUID.</summary>
+    internal sealed record ProvisionRequest(Guid ObjectId, string Name, string Email, string Role, string? Department)
+    {
+        internal static ProvisionRequest? Parse(string[] args)
+        {
+            string? Value(string name)
+            {
+                var index = Array.IndexOf(args, name);
+                return index >= 0 && index + 1 < args.Length && !args[index + 1].StartsWith("--", StringComparison.Ordinal)
+                    ? args[index + 1] : null;
+            }
+
+            if (!Guid.TryParse(Value("--object-id"), out var objectId) || objectId == Guid.Empty) return null;
+            var (name, email, role) = (Value("--name"), Value("--email"), Value("--role"));
+            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(role)) return null;
+            return new ProvisionRequest(objectId, name, email, role, Value("--department"));
+        }
     }
 
     private static int Usage()

@@ -8,6 +8,14 @@
     <article class="status-card"><span class="card-label">APPLICATION API</span><p class="status-value" [class.healthy]="state()?.apiOnline">{{ session.loading() ? 'Checking' : state()?.apiOnline ? 'Connected' : 'Unavailable' }}</p><p>ASP.NET Core foundation</p></article>
     <article class="status-card"><span class="card-label">DATABASE</span><p class="status-value" [class.healthy]="state()?.databaseReady">{{ session.loading() ? 'Checking' : state()?.databaseReady ? 'Ready' : 'Needs setup' }}</p><p>SQL Server &amp; initial schema</p></article>
     <article class="status-card"><span class="card-label">IDENTITY</span><p class="status-value" [class.healthy]="state()?.user">{{ state()?.user ? 'Authorized' : 'Sign in' }}</p><p>{{ state()?.user?.roles?.join(', ') || 'No application access' }}</p></article>
+    <article class="status-card"><span class="card-label">SIGN-IN</span>
+      @if (state()?.signIn; as signIn) {
+        <p class="status-value" [class.healthy]="signIn.multiFactor">{{ signIn.multiFactor === true ? 'MFA verified' : signIn.multiFactor === false ? 'No MFA in token' : 'Not reported' }}</p>
+        <p>{{ signIn.identityProvider }}@if (signIn.methods.length) { · {{ signIn.methods.join(', ') }} }</p>
+      } @else {
+        <p class="status-value">Unknown</p><p>Sign-in details unavailable</p>
+      }
+    </article>
   </div>
 </section>
 <section class="departments" aria-labelledby="departments-heading">

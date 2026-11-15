@@ -63,6 +63,57 @@ public static partial class DatabaseAdministration
         EXEC (@sql);
         """;
 
+    /// <summary>
+    /// Provisions a real Entra user, identified by their object ID (<c>oid</c>), never their email: creates or updates
+    /// the profile, then adds the role and an open department membership if missing. The same logic as
+    /// <c>infra/sql/provision-user.sql</c>, for a local database. Idempotent; unknown roles or departments are refused.
+    /// </summary>
+    public static async Task ProvisionUserAsync(FinOpsDbContext db, Guid entraObjectId, string displayName, string email,
+        string role, string? department, CancellationToken cancellationToken = default)
+    {
+        if (entraObjectId == Guid.Empty) throw new ArgumentException("The object ID must not be empty.", nameof(entraObjectId));
+        ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(email);
+        ArgumentException.ThrowIfNullOrWhiteSpace(role);
+
+        await db.Database.ExecuteSqlRawAsync(ProvisionSql, [
+            new SqlParameter("@objectId", System.Data.SqlDbType.UniqueIdentifier) { Value = entraObjectId },
+            new SqlParameter("@displayName", System.Data.SqlDbType.NVarChar, 200) { Value = displayName },
+            new SqlParameter("@email", System.Data.SqlDbType.NVarChar, 256) { Value = email },
+            new SqlParameter("@role", System.Data.SqlDbType.NVarChar, 50) { Value = role },
+            new SqlParameter("@department", System.Data.SqlDbType.NVarChar, 100) { Value = (object?)department ?? DBNull.Value },
+        ], cancellationToken);
+    }
+
+    private const string ProvisionSql = """
+        SET XACT_ABORT ON;
+        BEGIN TRANSACTION;
+        DECLARE @RoleId uniqueidentifier = (SELECT Id FROM [identity].Roles WHERE Name = @role);
+        IF @RoleId IS NULL THROW 50101, 'Unknown role. Use Employee, Manager, FinanceOfficer or Administrator.', 1;
+        DECLARE @DepartmentId uniqueidentifier = (SELECT Id FROM organization.Departments WHERE Name = @department);
+        IF @department IS NOT NULL AND @DepartmentId IS NULL THROW 50102, 'Unknown department name.', 1;
+
+        DECLARE @UserId uniqueidentifier = (SELECT Id FROM [identity].UserProfiles WHERE EntraObjectId = @objectId);
+        IF @UserId IS NULL
+        BEGIN
+            SET @UserId = NEWID();
+            INSERT [identity].UserProfiles (Id, EntraObjectId, DisplayName, Email, IsActive)
+            VALUES (@UserId, @objectId, @displayName, @email, 1);
+        END
+        ELSE
+            UPDATE [identity].UserProfiles SET DisplayName = @displayName, Email = @email WHERE Id = @UserId;
+
+        IF NOT EXISTS (SELECT 1 FROM [identity].UserRoles WHERE UserId = @UserId AND RoleId = @RoleId)
+            INSERT [identity].UserRoles (UserId, RoleId) VALUES (@UserId, @RoleId);
+
+        IF @DepartmentId IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM [identity].DepartmentMemberships
+            WHERE UserId = @UserId AND DepartmentId = @DepartmentId AND EndsAtUtc IS NULL)
+            INSERT [identity].DepartmentMemberships (UserId, DepartmentId, StartsAtUtc, EndsAtUtc)
+            VALUES (@UserId, @DepartmentId, SYSUTCDATETIME(), NULL);
+        COMMIT;
+        """;
+
     [GeneratedRegex("^[A-Za-z0-9._-]{1,128}$")]
     private static partial Regex PrincipalName();
 }

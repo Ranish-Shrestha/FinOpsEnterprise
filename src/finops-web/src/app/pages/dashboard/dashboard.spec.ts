@@ -13,7 +13,7 @@ describe('Dashboard', () => {
   }
 
   it('renders unavailable departments and offers a retry', async () => {
-    const load = vi.fn().mockReturnValue(of({ apiOnline: true, databaseReady: false, departments: null, user: null }));
+    const load = vi.fn().mockReturnValue(of({ apiOnline: true, databaseReady: false, departments: null, user: null, signIn: null }));
     const { fixture, session } = await render(load);
     await session.refresh();
     fixture.detectChanges();
@@ -28,7 +28,7 @@ describe('Dashboard', () => {
     const loaded = session.refresh();
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('button').disabled).toBe(true);
-    result.next({ apiOnline: true, databaseReady: true, departments: [{ id: 'test', name: 'Demo Finance' }], user: null });
+    result.next({ apiOnline: true, databaseReady: true, departments: [{ id: 'test', name: 'Demo Finance' }], user: null, signIn: null });
     result.complete();
     await loaded;
     fixture.detectChanges();

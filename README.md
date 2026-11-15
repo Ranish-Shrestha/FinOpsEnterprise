@@ -68,6 +68,7 @@ docs/
   architecture/ui-flow.md         UI flow charts: start-up and sign-in, page sections by permission, expense lifecycle
   api/openapi.json                OpenAPI document (kept in sync by a test)
   security/identity-authorization.md  Boundaries, permissions, personas, Entra setup
+  security/sso-mfa-demo.md        Free demo: Microsoft SSO + MFA and Google sign-in from the local UI
   design/phase3-expenses.md       Expense and budget rules (accepted)
   performance/expense-queries.md  Execution-plan and HTTP latency evidence, before and after
   operations/observability.md     Telemetry, metrics, suggested alerts

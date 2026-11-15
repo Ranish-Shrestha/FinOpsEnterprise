@@ -37,7 +37,7 @@ describe('routing guards (mock mode)', () => {
 
   beforeEach(() => {
     sessionStorage.clear();
-    state = { apiOnline: true, databaseReady: true, departments: [{ id: 'd1', name: 'Demo Engineering' }], user: employee };
+    state = { apiOnline: true, databaseReady: true, departments: [{ id: 'd1', name: 'Demo Engineering' }], user: employee, signIn: null };
   });
 
   it('sends a signed-out visitor to sign in, remembering the page they asked for', async () => {

@@ -1,4 +1,6 @@
 using System.Net;
+using System.Net.Http.Json;
+using FinOps.Api;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.DependencyInjection;
@@ -107,6 +109,27 @@ public sealed class JwtValidationTests
             extraClaims: new() { ["roles"] = new[] { "Administrator" }, ["permissions"] = "departments.read" }));
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/departments")).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/me")).StatusCode);
+    }
+
+    public static TheoryData<string, Dictionary<string, object>, string, bool?> SignIns() => new()
+    {
+        { "member with MFA", new() { ["amr"] = new[] { "pwd", "mfa" } }, "Microsoft Entra ID", true },
+        { "member, password only", new() { ["amr"] = new[] { "pwd" } }, "Microsoft Entra ID", false },
+        { "Gmail guest via Google federation", new() { ["idp"] = "google.com", ["amr"] = new[] { "fed" } }, "Google", false },
+        { "personal Microsoft account guest", new() { ["idp"] = "live.com" }, "Microsoft personal account", null },
+    };
+
+    [Theory]
+    [MemberData(nameof(SignIns))]
+    public async Task Sign_in_details_come_from_the_validated_token(string scenario, Dictionary<string, object> claims,
+        string provider, bool? multiFactor)
+    {
+        await using var factory = CreateFactory();
+        using var client = Client(factory, Token(extraClaims: claims));
+        var details = await client.GetFromJsonAsync<SignInDetailsDto>("/api/me/sign-in");
+        Assert.NotNull(details);
+        Assert.True(provider == details.IdentityProvider, $"{scenario}: {details.IdentityProvider}");
+        Assert.Equal(multiFactor, details.MultiFactor);
     }
 
     [Fact]

@@ -112,6 +112,32 @@ public sealed class DeploymentTests(SqlServerFixture fixture)
         });
     }
 
+    [Fact]
+    public async Task Provisioning_a_real_user_is_idempotent_and_refuses_unknown_roles()
+    {
+        var objectId = Guid.NewGuid();
+        await fixture.WithDbAsync(async db =>
+        {
+            await DatabaseAdministration.ProvisionUserAsync(db, objectId, "Real Person", "real@example.invalid", "Manager", "Demo Engineering");
+            await DatabaseAdministration.ProvisionUserAsync(db, objectId, "Real Person (renamed)", "real@example.invalid", "Manager", "Demo Engineering");
+
+            var counts = await db.Database.SqlQueryRaw<int>("""
+                SELECT (SELECT COUNT(*) FROM [identity].UserProfiles WHERE EntraObjectId = @oid AND DisplayName = N'Real Person (renamed)')
+                     + 10 * (SELECT COUNT(*) FROM [identity].UserRoles ur JOIN [identity].UserProfiles u ON u.Id = ur.UserId WHERE u.EntraObjectId = @oid)
+                     + 100 * (SELECT COUNT(*) FROM [identity].DepartmentMemberships m JOIN [identity].UserProfiles u ON u.Id = m.UserId WHERE u.EntraObjectId = @oid) AS Value
+                """, new SqlParameter("@oid", objectId)).SingleAsync();
+            Assert.Equal(111, counts); // one profile, one role, one membership
+
+            var role = await Assert.ThrowsAsync<SqlException>(() =>
+                DatabaseAdministration.ProvisionUserAsync(db, Guid.NewGuid(), "X", "x@example.invalid", "Owner", null));
+            Assert.Equal(50101, role.Number);
+            var department = await Assert.ThrowsAsync<SqlException>(() =>
+                DatabaseAdministration.ProvisionUserAsync(db, Guid.NewGuid(), "X", "x@example.invalid", "Employee", "Nowhere"));
+            Assert.Equal(50102, department.Number);
+            return 0;
+        });
+    }
+
     /// <summary>A SQL login mapped to a user that has exactly the runtime grants. Idempotent across tests.</summary>
     private async Task<string> RuntimeConnectionStringAsync()
     {

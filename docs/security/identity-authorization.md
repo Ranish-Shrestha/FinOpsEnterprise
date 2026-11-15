@@ -87,6 +87,8 @@ In mock mode the `/login` page (and later the workspace top bar) has a persona p
 
 ## Entra registration (real SSO)
 
+For a free, step-by-step demo of Microsoft SSO with MFA and Google sign-in, see [sso-mfa-demo.md](sso-mfa-demo.md).
+
 You need an Entra tenant in which you can register applications. The free tier is enough.
 
 1. **API app registration.**
@@ -115,7 +117,7 @@ You need an Entra tenant in which you can register applications. The free tier i
    ```
 
    Keep `apiBaseUrl` empty locally, because the dev server proxies `/api`. The app refuses to start if `tenantId` or `spaClientId` is not a GUID, or if `apiScope` doesn't end with `/FinOps.Access`.
-5. **Provision the user.** Insert a row in `identity.UserProfiles` with the user's Entra **object ID** (`oid`), not their email. Assign a role in `identity.UserRoles` and, if needed, a membership in `identity.DepartmentMemberships`. There is no admin UI yet.
+5. **Provision the user** by their Entra **object ID** (`oid`), not their email. The app's `/access-denied` page shows it after the first sign-in. Locally, run `dotnet run --project src/FinOps.Api -- provision-user --object-id <oid> --name "<name>" --email <email> --role <role> [--department "<department>"]`. In a deployed database, use [infra/sql/provision-user.sql](../../infra/sql/provision-user.sql). There is no admin UI yet.
 
 ## Deployed database access
 

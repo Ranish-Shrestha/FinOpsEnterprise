@@ -22,8 +22,10 @@ describe('FoundationService', () => {
     http.expectOne('/health/ready').flush({ status: 'Healthy' });
     http.expectOne('/api/departments').flush([{ id: 'demo', name: 'Demo Finance' }]);
     http.expectOne('/api/me').flush({ displayName: 'Demo', email: 'demo@example.invalid', roles: [], permissions: [], departmentIds: [] });
+    const signIn = { identityProvider: 'Google', methods: ['fed', 'mfa'], multiFactor: true };
+    http.expectOne('/api/me/sign-in').flush(signIn);
     expect(result).toEqual({ apiOnline: true, databaseReady: true, departments: [{ id: 'demo', name: 'Demo Finance' }],
-      user: { displayName: 'Demo', email: 'demo@example.invalid', roles: [], permissions: [], departmentIds: [] } });
+      user: { displayName: 'Demo', email: 'demo@example.invalid', roles: [], permissions: [], departmentIds: [] }, signIn });
   });
 
   it('preserves API availability when SQL Server is unavailable', () => {
@@ -33,6 +35,7 @@ describe('FoundationService', () => {
     http.expectOne('/health/ready').flush({}, { status: 503, statusText: 'Unavailable' });
     http.expectOne('/api/departments').flush({}, { status: 500, statusText: 'Failed' });
     http.expectOne('/api/me').flush({}, { status: 401, statusText: 'Unauthorized' });
-    expect(result).toEqual({ apiOnline: true, databaseReady: false, departments: null, user: null });
+    http.expectOne('/api/me/sign-in').flush({}, { status: 401, statusText: 'Unauthorized' });
+    expect(result).toEqual({ apiOnline: true, databaseReady: false, departments: null, user: null, signIn: null });
   });
 });

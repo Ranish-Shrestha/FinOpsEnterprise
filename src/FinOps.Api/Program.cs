@@ -76,6 +76,8 @@ api.MapGet("/me", async (CurrentUserAccess access) =>
     .Produces(StatusCodes.Status401Unauthorized)
     .Produces(StatusCodes.Status403Forbidden);
 
+api.MapSignInEndpoints();
+
 api.MapGet("/departments", async (CurrentUserAccess access, IDepartmentReader reader,
         CancellationToken cancellationToken) =>
     {
