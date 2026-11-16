@@ -30,7 +30,10 @@ SSRS cannot authenticate this application's Entra users, so **SSRS must never be
 
 ## Deploying locally (optional)
 
+Step by step, together with Power BI: [docs/operations/reporting-tools.md](../../docs/operations/reporting-tools.md). In short:
+
 1. Install **SQL Server 2022 Reporting Services** (free Developer edition) on a Windows machine with access to the database. Configure it in Report Server Configuration Manager; its catalog can live on the Docker SQL Server.
-2. In the web portal, create the `FinOps` shared data source from `FinOps.rds`, using the least-privilege login above.
-3. Upload the five `.rdl` files and bind each to the `FinOps` data source.
-4. Run a report as an administrator with `DepartmentIds` set to `null` in the URL to check the layout. Users should only ever reach reports through the trusted service.
+2. Create the least-privilege login with `dotnet run --project src/FinOps.Api -- grant-reporting-access`, with the password in `FINOPS_REPORTING_PASSWORD`. It can only `EXECUTE` the five procedures and read the `reporting` views.
+3. In the web portal, create the `FinOps` shared data source from `FinOps.rds`, using that login.
+4. Upload the five `.rdl` files and bind each to the `FinOps` data source.
+5. Run a report as an administrator with `DepartmentIds:isnull=true` in the URL to check the layout. Users should only ever reach reports through the trusted service.

@@ -114,6 +114,57 @@ public static partial class DatabaseAdministration
         COMMIT;
         """;
 
+    /// <summary>The reporting procedures the RDL files call (reports/SSRS).</summary>
+    public static readonly IReadOnlyList<string> ReportingProcedures =
+    [
+        "finance.usp_ExpenseSummary", "finance.usp_BudgetVsActual", "finance.usp_ApprovalAging",
+        "finance.usp_TransactionLedger", "audit.usp_AuditActivity",
+    ];
+
+    /// <summary>
+    /// Creates (or resets the password of) a SQL login for BI tools such as SSRS and Power BI, and grants it only
+    /// <c>SELECT</c> on the <c>reporting</c> views and <c>EXECUTE</c> on the reporting procedures: no table access,
+    /// no writes. These views are not department-scoped, so the login sees every department; give it to a report
+    /// server's service account, never to end users. SQL authentication: for a local or self-hosted SQL Server only.
+    /// Idempotent.
+    /// </summary>
+    public static async Task GrantReportingAccessAsync(FinOpsDbContext db, string loginName, string password,
+        CancellationToken cancellationToken = default)
+    {
+        if (!PrincipalName().IsMatch(loginName))
+            throw new ArgumentException("The login name must be 1-128 letters, digits, '-', '_' or '.'.", nameof(loginName));
+        // QUOTENAME accepts at most 128 characters; SQL Server's password policy checks the rest.
+        if (string.IsNullOrEmpty(password) || password.Length > 128)
+            throw new ArgumentException("The password must be 1-128 characters.", nameof(password));
+
+        var grants = string.Concat(ReportingProcedures.Select(p => $"+ N'GRANT EXECUTE ON OBJECT::{p} TO ' + @q + N';'"));
+        await db.Database.ExecuteSqlRawAsync(ReportingSql.Replace("/*PROCEDURE GRANTS*/", grants, StringComparison.Ordinal), [
+            new SqlParameter("@login", System.Data.SqlDbType.NVarChar, 128) { Value = loginName },
+            new SqlParameter("@password", System.Data.SqlDbType.NVarChar, 128) { Value = password },
+        ], cancellationToken);
+    }
+
+    // The login name and password are parameters, quoted inside SQL with QUOTENAME; neither is concatenated in C#.
+    // The procedure names come from the constant list above.
+    private const string ReportingSql = """
+        DECLARE @q nvarchar(300) = QUOTENAME(@login);
+        DECLARE @p nvarchar(300) = QUOTENAME(@password, '''');
+        DECLARE @sql nvarchar(max);
+        IF SUSER_ID(@login) IS NULL
+            SET @sql = N'CREATE LOGIN ' + @q + N' WITH PASSWORD = ' + @p + N', CHECK_POLICY = ON, DEFAULT_DATABASE = '
+                + QUOTENAME(DB_NAME()) + N';';
+        ELSE
+            SET @sql = N'ALTER LOGIN ' + @q + N' WITH PASSWORD = ' + @p + N';';
+        EXEC (@sql);
+        IF DATABASE_PRINCIPAL_ID(@login) IS NULL
+        BEGIN
+            SET @sql = N'CREATE USER ' + @q + N' FOR LOGIN ' + @q + N';';
+            EXEC (@sql);
+        END
+        SET @sql = N'GRANT SELECT ON SCHEMA::reporting TO ' + @q + N';' /*PROCEDURE GRANTS*/;
+        EXEC (@sql);
+        """;
+
     [GeneratedRegex("^[A-Za-z0-9._-]{1,128}$")]
     private static partial Regex PrincipalName();
 }

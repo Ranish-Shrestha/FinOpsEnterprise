@@ -2,20 +2,21 @@
 
 [![CI](https://github.com/Ranish-Shrestha/FinOpsEnterprise/actions/workflows/ci.yml/badge.svg)](https://github.com/Ranish-Shrestha/FinOpsEnterprise/actions/workflows/ci.yml)
 
-A portfolio-quality internal financial operations platform: ASP.NET Core 10, Angular 21, SQL Server and Microsoft Entra ID. It is built in vertical phases, and each phase runs end to end and is tested. **Only synthetic data belongs in this project.**
+A portfolio-quality internal financial operations platform: ASP.NET Core 10, Angular 21, SQL Server and Microsoft Entra ID, with optional Google sign-in. It is built in vertical phases, and each phase runs end to end and is tested. **Only synthetic data belongs in this project.**
 
 ## Status
 
 | Phase | Scope | State |
 | --- | --- | --- |
 | 1. Foundation | Solution layout, SQL Server, EF migrations, health, OpenAPI, Angular shell | Done |
-| 2. Identity and authorization | Entra OIDC/PKCE, JWT validation, app-owned roles, permissions and dated memberships, mock personas | Done; real Entra sign-in not yet verified with a tenant |
+| 2. Identity and authorization | Entra OIDC/PKCE, JWT validation, app-owned roles, permissions and dated memberships, mock personas; optional direct Google sign-in | Done. Google sign-in verified locally end to end; real Entra sign-in not yet verified with a tenant ([ADR 0009](docs/decisions/0009-google-sign-in.md)) |
 | 2.5 Hardening | Demo data out of migrations, per-request access cache, rate limiting, security headers, CI | Done |
 | 3a. Expense workflow | Draft → submit → approve/reject → post; separation of duties; ETag concurrency; audit trail; paged API; UI | Done ([design](docs/design/phase3-expenses.md)) |
 | 3b. Budgets and SQL | Monthly budgets, budget vs. actual via a stored procedure, covering indexes with execution-plan evidence | Done ([evidence](docs/performance/expense-queries.md)) |
-| 4. Reporting | Five reports from parameterized stored procedures, as an in-app preview, PDF or Excel; matching SSRS RDL files; server-side department isolation; audited exports | Done ([ADR 0004](docs/decisions/0004-report-access.md)); RDL files not rendered on a real SSRS server |
+| 4. Reporting | Five reports from parameterized stored procedures, as an in-app preview, PDF or Excel; matching SSRS RDL files; read-only `reporting` views and login for Power BI and SSRS ([guide](docs/operations/reporting-tools.md)); server-side department isolation; audited exports | Done ([ADR 0004](docs/decisions/0004-report-access.md)); RDL files not rendered on a real SSRS server |
 | 5. Reliability | Transactional outbox written with each approve/reject/post; background worker with leases, exponential retries, dead-lettering and admin replay; idempotent handlers (one reimbursement per posted expense, in-app notifications) | Done ([ADR 0005](docs/decisions/0005-messaging-outbox.md)); local SQL-backed queue, Azure Service Bus adapter not built |
 | 6. Quality and DevOps | Agreed latency targets measured at 60k expenses (enforced in CI); OpenTelemetry traces, metrics and logs across API → SQL → worker, viewable in the Aspire dashboard; Playwright end-to-end journeys in CI | Done ([ADR 0006](docs/decisions/0006-quality-targets-and-telemetry.md)); CI enforcement not yet observed (see [verification](docs/verification.md)) |
+| UI and demo tooling | Routed pages with auth and workspace layouts (`/login`, `/dashboard`, `/expenses/:id`, ...); a role-aware dashboard; sign-in details (identity provider, MFA) from the validated token; `provision-user`, `seed-demo-expenses` and `grant-reporting-access` commands; `reporting` views for Power BI | Done ([ADR 0008](docs/decisions/0008-client-routing.md), [reporting tools](docs/operations/reporting-tools.md)); Power BI and SSRS not yet run against them |
 | 7. Azure and portfolio | Dockerfile (non-root, chiseled); Bicep for Container Apps (scale to zero), serverless SQL (free offer, Entra-only, managed identity with least-privilege grants), Static Web Apps; OIDC CD workflow gated on CI; runtime SPA config and CORS; screenshots and demo script | Templates and CD done ([ADR 0007](docs/decisions/0007-azure-deployment.md)); **not deployed yet**, by choice |
 
 Full plan: [FINOPS_ENTERPRISE_CODEX_SPEC.md](FINOPS_ENTERPRISE_CODEX_SPEC.md). What has actually been run: [docs/verification.md](docs/verification.md). A guided tour: [docs/demo-walkthrough.md](docs/demo-walkthrough.md).
@@ -27,13 +28,13 @@ All data is synthetic. To regenerate the screenshots, see *End-to-end tests* bel
 | | |
 | --- | --- |
 | ![Overview as Demo Employee](docs/screenshots/overview.png) | ![Approval queue with expense detail](docs/screenshots/approval-queue.png) |
-| *Employee overview: departments filtered by membership, notifications from the worker* | *Manager's approval queue: actions follow role and separation of duties* |
+| *Employee overview (taken before the role-aware dashboard; regenerate as described below)* | *Manager's approval queue: actions follow role and separation of duties* |
 | ![Department expense summary report](docs/screenshots/reports.png) | ![One trace from HTTP request to background worker](docs/screenshots/trace.png) |
 | *Reports preview, with PDF and Excel export; department scope enforced by the API* | *One OpenTelemetry trace: the request, its SQL, then the worker's outbox processing* |
 
 ## What this demonstrates so far
 
-- **Authentication separate from authorization.** A valid Entra token identifies the caller. Roles, permissions and department memberships come only from SQL Server, and token role claims are never trusted.
+- **Authentication separate from authorization.** A valid Entra or Google token identifies the caller. Roles, permissions and department memberships come only from SQL Server, and token role claims are never trusted. A new account lands on `/access-denied` until an administrator provisions it.
 - **Server-side resource filtering.** Department lists are filtered by active, dated memberships before projection. Expired memberships and deactivated users grant nothing.
 - **Tests at the right level.**
   - Domain unit tests.
@@ -44,6 +45,8 @@ All data is synthetic. To regenerate the screenshots, see *End-to-end tests* bel
   - Latency targets measured at 60,000 expenses, with before/after evidence.
 - **Reliable background processing.** Business events are written in the same transaction as the change, delivered at least once by a worker, and handled idempotently. Tests prove no duplicate effect under redelivery, partial failure, expired leases and concurrent workers.
 - **Observability.** One OpenTelemetry trace follows a business action from the HTTP request through SQL to the background worker. Outbox backlog, dead letters and delivery latency are metrics.
+- **Realistic, rule-abiding demo data.** `seed-demo-expenses` drives months of expenses through the real domain workflow, with decisions, audit events, notifications and budgets. It is deterministic and idempotent.
+- **BI without weakening the app.** SSRS reports and Power BI connect through a login that can only read flat `reporting` views and run the reporting procedures. The app itself stays the access boundary.
 - **Operational basics.** Liveness and readiness, Problem Details, correlation IDs in structured logs, security headers, rate limiting, and migrations that are never applied automatically.
 
 ## Repository layout
@@ -55,11 +58,10 @@ src/
   FinOps.Domain/           Entities and invariants (no framework dependencies)
   FinOps.Infrastructure/   EF Core mappings, migrations, readers, demo seeder, outbox queue and processor
   FinOps.Worker/           Background worker host (delivers outbox messages)
+  finops-web/              Angular SPA: routed pages, auth and workspace layouts, guards
 infra/
   main.bicep               Azure: Container Apps, serverless SQL, Static Web App, identity, monitoring
   sql/provision-user.sql   Provision a real Entra user in a deployed database
-Dockerfile                API and worker images (targets api, worker)
-  finops-web/              Angular standalone SPA
 tests/
   FinOps.UnitTests/        Domain invariants
   FinOps.IntegrationTests/ HTTP tests (doubles) + real SQL Server tests (Category=Database)
@@ -69,6 +71,7 @@ docs/
   api/openapi.json                OpenAPI document (kept in sync by a test)
   security/identity-authorization.md  Boundaries, permissions, personas, Entra setup
   security/sso-mfa-demo.md        Free demo: Microsoft SSO + MFA and Google sign-in from the local UI
+  operations/reporting-tools.md   SSRS and Power BI Desktop on the local database (free)
   design/phase3-expenses.md       Expense and budget rules (accepted)
   performance/expense-queries.md  Execution-plan and HTTP latency evidence, before and after
   operations/observability.md     Telemetry, metrics, suggested alerts
@@ -79,8 +82,10 @@ docs/
   requirements-review.md          Spec adjustments and open questions
   verification.md                 Dated log of what was run
 reports/SSRS/                     RDL report definitions (generated) and deployment notes
+reports/PowerBI/                  Power BI connection file (.pbids) for the reporting views
 .github/workflows/ci.yml          Build, tests, real-SQL tests, EF drift, Angular, E2E, images, Bicep lint, audit
 .github/workflows/deploy.yml      CD to Azure after CI passes on main (OIDC, opt-in)
+Dockerfile                        API and worker images (targets api, worker)
 docker-compose.yml                Local SQL Server; optional Aspire dashboard (profile: observability)
 ```
 
@@ -215,13 +220,15 @@ The app opens at `/login`. In mock mode, pick a **Development persona** and clic
 
 The seed data includes an expense in each state, so every view has something to show.
 
-**Background processing:** after the Engineering Manager approves and Finance posts, switch back to **Demo Employee** and press *Refresh* in the *Notifications* panel: "approved" and "posted" notifications appear within a couple of seconds, and the expense shows *Reimbursement: Scheduled*. Stop the worker, post another expense, and the notification waits until you start it again. As **Demo Administrator**, the panel also shows the outbox: pending and dead-lettered counts, with *Replay* for dead letters.
+**Dashboard:** `/dashboard` shows each persona's own work. Every role gets their drafts and expenses awaiting approval, and unread notifications. Managers also get the approval queue, finance gets *Ready to post*, and anyone who may read budgets gets this month's budget per department. Each tile links to the matching list. Run `seed-demo-expenses` (step 2) for a fuller picture.
 
-**Reports:** in the *Reports* panel, pick a report, then use *Preview*, *PDF* or *Excel*. As **Demo Manager**, every report contains only Demo Finance, including inside the downloaded files. **Demo Administrator** also gets *Audit activity*. Employees don't see the panel.
+**Background processing:** after the Engineering Manager approves and Finance posts, switch back to **Demo Employee** and open *Notifications*: "approved" and "posted" notifications appear within a couple of seconds, and the expense shows *Reimbursement: Scheduled*. Stop the worker, post another expense, and the notification waits until you start it again. As **Demo Administrator**, the *Outbox* page (`/admin/outbox`) shows pending and dead-lettered counts, with *Replay* for dead letters.
 
-**Budgets:** as **Demo Finance Officer**, the *Budget vs. actual* panel shows every department. Use *Set budget* or *Edit* to change a month. As **Demo Manager**, the same panel shows only Demo Finance and has no edit controls. Employees don't see the panel at all.
+**Reports:** on the *Reports* page, pick a report, then use *Preview*, *PDF* or *Excel*. As **Demo Manager**, every report contains only Demo Finance, including inside the downloaded files. **Demo Administrator** also gets *Audit activity*. Employees don't see the page.
 
-Then stop the database with `docker compose stop sqlserver` and refresh. The API stays live, readiness reports the database is unavailable, and departments report failure. No fake data is substituted. Start it again with `docker compose up -d --wait sqlserver`.
+**Budgets:** as **Demo Finance Officer**, the *Budgets* page shows every department. Use *Set budget* or *Edit* to change a month. As **Demo Manager**, the same page shows only Demo Finance and has no edit controls. Employees don't see the page at all.
+
+Then stop the database with `docker compose stop sqlserver` and refresh. The API stays live, the dashboard's status line shows *Database not ready*, and its panels say they couldn't load. No fake data is substituted. Start it again with `docker compose up -d --wait sqlserver`.
 
 ### Starting again later
 
@@ -234,15 +241,71 @@ Steps 1 and 2 are one-time setup. On later days:
 
 After pulling changes that add migrations, run `dotnet ef database update` (as in step 2) before starting the API.
 
-## Real Entra sign-in
+## Real sign-in (Google or Microsoft Entra)
 
-1. Register the API and SPA apps.
-2. Set the API's token version to v2.
-3. Configure the tenant and audience through user secrets.
-4. Set `mockMode: false` and the Entra IDs in `src/finops-web/public/config.json`. It overrides `auth.config.ts` at startup.
-5. Provision your user by Entra object ID.
+Mock mode skips the identity provider. For real single sign-on, configure Google, Entra or both; `/login` then shows a button for each. Either way, **the app still decides access**: a new account lands on `/access-denied`, which shows its object ID, until you provision it.
 
-Step-by-step: [docs/security/identity-authorization.md](docs/security/identity-authorization.md#entra-registration-real-sso).
+**Google (quickest, free, no tenant):**
+
+1. Create a Google Cloud OAuth client of type *Web application*:
+   - JavaScript origin `http://127.0.0.1:4200`;
+   - redirect URI `http://127.0.0.1:4200/`;
+   - consent screen in *Testing*, with your Gmail as a test user.
+2. Set the client ID for the API, then restart it:
+
+   ```powershell
+   dotnet user-secrets set "Security:GoogleClientId" "<client-id>" --project src/FinOps.Api
+   dotnet user-secrets set "Security:UseDevelopmentMockAuthentication" "false" --project src/FinOps.Api
+   ```
+
+3. In `src/finops-web/public/config.json`, set `"mockMode": false` and `"googleClientId": "<client-id>"`. Don't commit it.
+4. Sign in, copy the object ID from `/access-denied`, and provision yourself:
+
+   ```powershell
+   dotnet run --project src/FinOps.Api -- provision-user --object-id <object-id> --name "<name>" --email <email> --role Manager --department "Demo Engineering"
+   ```
+
+   Roles are `Employee`, `Manager`, `FinanceOfficer` and `Administrator`.
+
+Google sign-in tokens don't say whether 2-Step Verification ran, so the dashboard shows MFA as *not reported*.
+
+**Microsoft Entra:**
+
+1. Register the API and SPA apps, with the API's token version set to v2.
+2. Set `Security:TenantId` and `Security:Audience` in user secrets.
+3. Put the Entra IDs in `config.json`.
+4. Provision the user as above.
+
+With Entra, the dashboard confirms MFA from the token.
+
+**Step-by-step, all free:**
+
+- [docs/security/sso-mfa-demo.md](docs/security/sso-mfa-demo.md): Google sign-in, Microsoft SSO with Authenticator MFA, and Google federation through Entra.
+- [docs/security/identity-authorization.md](docs/security/identity-authorization.md#entra-registration-real-sso): Entra registration details.
+
+**Back to mock mode:** set `mockMode: true` in `config.json` and `Security:UseDevelopmentMockAuthentication` to `true`, then restart the API.
+
+## Admin commands
+
+One-shot commands run instead of the web host: `dotnet run --project src/FinOps.Api -- <command>`.
+
+| Command | Where | What it does |
+| --- | --- | --- |
+| `seed-demo-data` | Development only | Synthetic personas, memberships, sample expenses and budgets. Idempotent |
+| `seed-demo-expenses [--months <1-11>] [--for-user <object ID> [--per-month <1-20>]]` | Development only | Months of realistic expense history (see step 2). Idempotent |
+| `provision-user --object-id <id> --name <name> --email <email> --role <role> [--department <name>]` | Any | Give a real Entra or Google account a role and department. Idempotent; unknown roles or departments are refused |
+| `grant-reporting-access [--login <name>]` | Development only | Read-only SQL login for SSRS and Power BI. Takes its password from `FINOPS_REPORTING_PASSWORD`, never the command line |
+| `migrate` | Deployment pipeline | Apply EF migrations |
+| `grant-app-access <identity> [<client id>]` | Deployment pipeline | Least-privilege database user for the app's managed identity |
+
+## Reporting with SSRS and Power BI
+
+The app's *Reports* page already previews and exports PDF and Excel. To show the same data in standard BI tools on your machine, both free on Windows:
+
+- **SSRS:** upload the five RDL reports in [reports/SSRS](reports/SSRS) to SQL Server 2022 Reporting Services (Developer edition).
+- **Power BI Desktop:** double-click [reports/PowerBI/FinOps.pbids](reports/PowerBI/FinOps.pbids) and load the `reporting` views.
+
+Both connect as the read-only login from `grant-reporting-access`. It sees every department, so keep it to yourself or a report server's service account. Step by step: [docs/operations/reporting-tools.md](docs/operations/reporting-tools.md).
 
 ## Endpoints
 
@@ -253,6 +316,7 @@ Step-by-step: [docs/security/identity-authorization.md](docs/security/identity-a
 | `GET /openapi/v1.json` | Anonymous, **Development only** | OpenAPI document. A committed copy is in [docs/api/openapi.json](docs/api/openapi.json) |
 | `GET /swagger` | Anonymous, **Development only** | Swagger UI. Use *Authorize* with a persona's object ID (`X-Development-User`) or an Entra access token |
 | `GET /api/me` | Scope + provisioned active user | Profile, roles, permissions and active department IDs |
+| `GET /api/me/sign-in` | Scope (no profile needed) | How the caller signed in, read from the validated token: identity provider, `amr` methods, whether MFA was reported, and the object ID to provision |
 | `GET /api/departments` | Scope + `departments.read` | Departments filtered by membership, or all with `departments.read.all` |
 | `GET /api/expenses` | Scope + provisioned user | Paged list of visible expenses. Filters: `status`, `departmentId`, `mine`, `sort` (`createdAt`, `submittedAt`, `expenseDate`, `amount`; prefix `-` for descending), `page`, `pageSize` (max 100) |
 | `GET /api/expenses/{id}` | Scope + can view | Detail, approval history, `allowedActions`, `ETag` |
@@ -340,16 +404,21 @@ Optional, and it costs money. Everything is in [docs/operations/deployment.md](d
 | Symptom | Cause and fix |
 | --- | --- |
 | Browser shows `ERR_CONNECTION_REFUSED` at `127.0.0.1:4200` | The UI isn't running. Its terminal was closed, or `npm start` exited with an error. Start it as in step 4 and keep that terminal open |
-| UI loads, but API shows *Unavailable* | The API isn't running. Start it as in step 3 and keep that terminal open |
-| UI shows database *Needs setup* | SQL Server is stopped (`docker compose up -d --wait sqlserver`), or the migrations were never applied (`dotnet ef database update ...`) |
+| UI loads, but the dashboard's status line says *API unavailable* | The API isn't running. Start it as in step 3 and keep that terminal open |
+| Dashboard says *Database not ready*, or its panels couldn't load | SQL Server is stopped (`docker compose up -d --wait sqlserver`), or the migrations were never applied (`dotnet ef database update ...`) |
 | `container finops-enterprise-sqlserver-1 exited (255)` | Usually the `.env` password is still the placeholder, or too weak. Check with `docker compose logs sqlserver`. Fix `.env`, then `docker compose down --volumes` and `up` again |
 | `Login failed for user 'sa'` | The user-secret password differs from the one the volume was created with. Make them match, or recreate the volume |
 | PowerShell `Unexpected token '$env:...'` | Two commands were pasted onto one line. Run each command on its own line |
-| Every Angular spec fails with "Vitest failed to find the runner" | Windows shell reported a lowercase drive (`f:\`). Run from a terminal at `F:\...`, such as a plain PowerShell window |
+| Every Angular spec fails with "Vitest failed to find the runner" | Windows shell reported a lowercase drive (`f:\`). Run from a terminal at `F:\...`, such as a plain PowerShell window. If it persists, run once with `$env:NG_PERSISTENT_BUILD_CACHE = "0"` to bypass a stale build cache |
 | Database tests time out creating a container | Docker was still starting or pulling the image. Run `docker pull mcr.microsoft.com/mssql/server:2022-CU28-ubuntu-22.04` once, then retry |
 | `SqlException ... error: 0 - The wait operation timed out` | `localhost` resolved to IPv6 `::1`, but Compose publishes SQL Server on IPv4 only. Use `Server=127.0.0.1,14333` in the connection string |
 | Notifications never appear after approving or posting | The worker isn't running. Start it as in step 4b. If it exits with *Configure ConnectionStrings:FinOps*, it wasn't started in Development (user secrets load only there): use `dotnet run --project src/FinOps.Worker`, or set `$env:DOTNET_ENVIRONMENT = "Development"` |
 | Every persona gets 403 | Demo data not seeded. Run `dotnet run --project src/FinOps.Api -- seed-demo-data` |
+| Signed in with Google or Entra, but always on `/access-denied` | Expected until the account is provisioned. Run `provision-user` with the object ID shown on that page, then click *Try again* |
+| `/login` still shows the persona picker after setting up real sign-in | `config.json` still has `"mockMode": true`, or the page wasn't reloaded |
+| No *Sign in with Google* button | `config.json` needs `"mockMode": false` and `googleClientId` |
+| Google sign-in returns, then every call is 401 | The API's `Security:GoogleClientId` must equal the UI's `googleClientId`, and the API must be restarted after setting it |
+| Dashboard and reports are mostly empty | Only the four sample expenses exist. Run `seed-demo-expenses` (step 2) |
 | 401 with a real Entra token | The token is v1, or the audience doesn't match. See the Entra setup notes on `requestedAccessTokenVersion` and `Security:Audience` |
 | API exits at startup about `ConnectionStrings:FinOps` | User secret not set, or `ASPNETCORE_ENVIRONMENT` is not `Development` |
 
@@ -369,6 +438,7 @@ Press Ctrl+C in the API, worker and UI terminals, then run `docker compose stop`
 - [ADR 0007: Low-cost Azure deployment](docs/decisions/0007-azure-deployment.md)
 - [ADR 0008: Client-side routing and identity pages](docs/decisions/0008-client-routing.md)
 - [ADR 0009: Optional direct Google sign-in](docs/decisions/0009-google-sign-in.md)
+- [SSO and MFA demo](docs/security/sso-mfa-demo.md) · [SSRS and Power BI](docs/operations/reporting-tools.md)
 - [Deployment](docs/operations/deployment.md) · [Demo walkthrough](docs/demo-walkthrough.md)
 - [Observability](docs/operations/observability.md)
 - [Requirements review and open questions](docs/requirements-review.md)

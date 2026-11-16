@@ -1,0 +1,16 @@
+{
+  "version": "0.1",
+  "connections": [
+    {
+      "details": {
+        "protocol": "tds",
+        "address": {
+          "server": "127.0.0.1,14333",
+          "database": "FinOpsEnterprise"
+        }
+      },
+      "options": {},
+      "mode": "Import"
+    }
+  ]
+}

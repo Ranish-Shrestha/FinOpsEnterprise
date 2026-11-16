@@ -17,3 +17,6 @@
 appsettings.Local.json
 *.user
 *.suo
+
+# Power BI reports contain a copy of the data
+*.pbix
