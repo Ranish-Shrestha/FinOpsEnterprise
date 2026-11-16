@@ -20,3 +20,6 @@ appsettings.Local.json
 
 # Power BI reports contain a copy of the data
 *.pbix
+
+# Google OAuth client downloads contain the client secret; the app never needs it
+client_secret*.json
