@@ -1,11 +1,11 @@
 import { Component, inject, input, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { AuthService } from '../../auth.service';
+import { AuthService, SignInProvider } from '../../auth.service';
 import { SessionStore } from '../../core/session.store';
 
 /**
- * Sign in. With Entra, this is single sign-on: Microsoft's page handles the password, MFA and any Conditional Access
- * policy, then returns here. In local development, a synthetic persona stands in for the Entra account.
+ * Sign in. This is single sign-on: Microsoft's (Entra) or Google's page handles the password and MFA, then returns
+ * here. Which buttons appear depends on config.json. In local development, a synthetic persona stands in for the Entra account.
  */
 @Component({
   selector: 'app-login',
@@ -15,7 +15,7 @@ import { SessionStore } from '../../core/session.store';
     <h1 class="auth-title">Sign in</h1>
     <p class="auth-lead">
       @if (auth.mockMode) { Local development: choose a synthetic persona. No real account is used. }
-      @else { Use your organization's Microsoft account. Your password and MFA are handled by Microsoft Entra ID. }
+      @else { Sign in with your account. Your password and MFA are handled by Microsoft or Google, never by this app. }
     </p>
     @if (auth.signInError()) { <p class="auth-error" role="alert">{{ auth.signInError() }}</p> }
     <div class="auth-actions">
@@ -29,7 +29,12 @@ import { SessionStore } from '../../core/session.store';
         </label>
         <button type="button" (click)="continueAsPersona()" [disabled]="busy()">{{ busy() ? 'Signing in...' : 'Continue' }}</button>
       } @else {
-        <button type="button" (click)="signInWithMicrosoft()" [disabled]="busy()">{{ busy() ? 'Redirecting to Microsoft...' : 'Sign in with Microsoft' }}</button>
+        @if (auth.entraEnabled) {
+          <button type="button" (click)="signInWith('microsoft')" [disabled]="busy()">{{ busy() === 'microsoft' ? 'Redirecting to Microsoft...' : 'Sign in with Microsoft' }}</button>
+        }
+        @if (auth.googleEnabled) {
+          <button type="button" [class]="auth.entraEnabled ? 'button secondary' : ''" (click)="signInWith('google')" [disabled]="busy()">{{ busy() === 'google' ? 'Redirecting to Google...' : 'Sign in with Google' }}</button>
+        }
       }
     </div>
     <nav class="auth-links" aria-label="Account help">
@@ -46,10 +51,11 @@ export class Login {
 
   /** `?returnUrl=` set by the auth guard. AuthService accepts only same-origin paths. */
   readonly returnUrl = input<string | undefined>();
-  readonly busy = signal(false);
+  /** False, or what is in progress. */
+  readonly busy = signal<false | 'persona' | SignInProvider>(false);
 
   async continueAsPersona(): Promise<void> {
-    this.busy.set(true);
+    this.busy.set('persona');
     try {
       await this.auth.signIn(this.returnUrl());
       await this.session.refresh();
@@ -59,10 +65,10 @@ export class Login {
     }
   }
 
-  async signInWithMicrosoft(): Promise<void> {
-    this.busy.set(true);
+  async signInWith(provider: SignInProvider): Promise<void> {
+    this.busy.set(provider);
     try {
-      await this.auth.signIn(this.returnUrl()); // leaves for Entra
+      await this.auth.signIn(this.returnUrl(), provider); // leaves for Microsoft or Google
     } catch {
       this.auth.signInError.set('Could not start sign-in. Please try again.');
       this.busy.set(false);

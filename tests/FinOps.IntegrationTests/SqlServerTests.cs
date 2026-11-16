@@ -70,7 +70,13 @@ public sealed class SqlServerFixture : IAsyncLifetime
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
-            var configuration = new Dictionary<string, string?> { ["ConnectionStrings:FinOps"] = connectionString };
+            // Pinned so a developer's user secrets (loaded in Development), such as real sign-in, can't change the tests.
+            var configuration = new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:FinOps"] = connectionString,
+                ["Security:UseDevelopmentMockAuthentication"] = "true",
+                ["Security:GoogleClientId"] = "",
+            };
             foreach (var (key, value) in settings ?? new Dictionary<string, string?>()) configuration[key] = value;
             builder.UseEnvironment("Development");
             builder.ConfigureLogging(logging => logging.ClearProviders());

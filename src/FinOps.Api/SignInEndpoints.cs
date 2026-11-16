@@ -7,7 +7,12 @@ namespace FinOps.Api;
 /// <param name="IdentityProvider">Who authenticated the user, for example "Microsoft Entra ID" or "Google".</param>
 /// <param name="Methods">The token's <c>amr</c> values, such as <c>pwd</c>, <c>mfa</c> or <c>fed</c>. Empty when not reported.</param>
 /// <param name="MultiFactor">True when <c>amr</c> says MFA was performed; null when the token doesn't say.</param>
-public sealed record SignInDetailsDto(string IdentityProvider, IReadOnlyList<string> Methods, bool? MultiFactor);
+/// <param name="AccountId">
+/// The object ID the application knows this account by, which an administrator provisions: the Entra <c>oid</c>, or
+/// for a direct Google sign-in, the GUID derived from the Google account.
+/// </param>
+public sealed record SignInDetailsDto(string IdentityProvider, IReadOnlyList<string> Methods, bool? MultiFactor,
+    string? AccountId);
 
 internal static class SignInEndpoints
 {
@@ -32,14 +37,19 @@ internal static class SignInEndpoints
     /// </summary>
     internal static SignInDetailsDto Describe(ClaimsPrincipal user)
     {
+        var accountId = user.FindFirst(ClaimNames.ObjectId)?.Value;
         if (user.Identity?.AuthenticationType == DevelopmentAuthenticationHandler.SchemeName)
         {
-            return new SignInDetailsDto("Development persona (mock, no real sign-in)", [], null);
+            return new SignInDetailsDto("Development persona (mock, no real sign-in)", [], null, accountId);
         }
 
+        // Google ID tokens carry no amr, so whether Google asked for 2-Step Verification is not reported.
         var methods = user.FindAll("amr").Select(c => c.Value).Distinct(StringComparer.Ordinal).ToList();
         bool? multiFactor = methods.Count == 0 ? null : methods.Any(m => m is "mfa" or "ngcmfa");
-        return new SignInDetailsDto(ProviderName(user.FindFirst("idp")?.Value, user.FindFirst("iss")?.Value), methods, multiFactor);
+        var issuer = user.FindFirst("iss")?.Value;
+        var provider = GoogleAccounts.IsGoogleIssuer(issuer) ? "Google (direct sign-in)"
+            : ProviderName(user.FindFirst("idp")?.Value, issuer);
+        return new SignInDetailsDto(provider, methods, multiFactor, accountId);
     }
 
     private static string ProviderName(string? idp, string? issuer)

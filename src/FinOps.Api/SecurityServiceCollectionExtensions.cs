@@ -2,6 +2,7 @@ using FinOps.Application.Identity;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 
 namespace FinOps.Api.Security;
@@ -22,7 +23,10 @@ internal static class SecurityServiceCollectionExtensions
         }
 
         var useMock = environment.IsDevelopment() && settings.UseDevelopmentMockAuthentication;
-        var scheme = useMock ? DevelopmentAuthenticationHandler.SchemeName : JwtBearerDefaults.AuthenticationScheme;
+        var scheme = useMock ? DevelopmentAuthenticationHandler.SchemeName
+            : !settings.GoogleConfigured ? JwtBearerDefaults.AuthenticationScheme
+            : settings.EntraConfigured ? TokenSelectorScheme
+            : GoogleAccounts.SchemeName;
         var authentication = services.AddAuthentication(options =>
         {
             options.DefaultAuthenticateScheme = scheme;
@@ -36,7 +40,25 @@ internal static class SecurityServiceCollectionExtensions
         }
         else
         {
-            AddEntraJwtBearer(authentication, settings);
+            if (!settings.EntraConfigured && !settings.GoogleConfigured)
+            {
+                throw new InvalidOperationException(
+                    "Configure Security:TenantId and Security:Audience for Entra authentication, "
+                    + "and/or Security:GoogleClientId for Google sign-in.");
+            }
+
+            if (settings.EntraConfigured) AddEntraJwtBearer(authentication, settings);
+            if (settings.GoogleConfigured) AddGoogleJwtBearer(authentication, settings);
+            if (settings.EntraConfigured && settings.GoogleConfigured)
+            {
+                // Picks a validator from the token's unverified issuer. The chosen scheme then verifies everything,
+                // so a forged issuer only selects a validator that rejects the token.
+                authentication.AddPolicyScheme(TokenSelectorScheme, "Entra or Google", options =>
+                    options.ForwardDefaultSelector = context =>
+                        GoogleAccounts.IsGoogleIssuer(UnverifiedIssuer(context.Request.Headers.Authorization.ToString()))
+                            ? GoogleAccounts.SchemeName
+                            : JwtBearerDefaults.AuthenticationScheme);
+            }
         }
 
         var requireScope = new AuthorizationPolicyBuilder()
@@ -60,14 +82,10 @@ internal static class SecurityServiceCollectionExtensions
         return services;
     }
 
+    private const string TokenSelectorScheme = "EntraOrGoogle";
+
     private static void AddEntraJwtBearer(AuthenticationBuilder authentication, SecurityOptions settings)
     {
-        if (string.IsNullOrWhiteSpace(settings.TenantId) || string.IsNullOrWhiteSpace(settings.Audience))
-        {
-            throw new InvalidOperationException(
-                "Configure Security:TenantId and Security:Audience for Entra authentication.");
-        }
-
         authentication.AddJwtBearer(options =>
         {
             options.Authority = $"https://login.microsoftonline.com/{settings.TenantId}/v2.0";
@@ -82,6 +100,46 @@ internal static class SecurityServiceCollectionExtensions
                 ClockSkew = TimeSpan.FromMinutes(2)
             };
         });
+    }
+
+    /// <summary>Google ID tokens for this app's Google OAuth client. See <see cref="GoogleAccounts"/>.</summary>
+    private static void AddGoogleJwtBearer(AuthenticationBuilder authentication, SecurityOptions settings)
+    {
+        authentication.AddJwtBearer(GoogleAccounts.SchemeName, options =>
+        {
+            options.Authority = GoogleAccounts.Issuer;
+            options.Audience = settings.GoogleClientId;
+            options.MapInboundClaims = false;
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidIssuers = [GoogleAccounts.Issuer, "accounts.google.com"],
+                ValidateAudience = true,
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+                ClockSkew = TimeSpan.FromMinutes(2)
+            };
+            options.Events = new JwtBearerEvents
+            {
+                OnTokenValidated = context =>
+                {
+                    GoogleAccounts.AddApplicationClaims(context.Principal, settings.ApiScope);
+                    return Task.CompletedTask;
+                }
+            };
+        });
+    }
+
+    /// <summary>The <c>iss</c> of a bearer token, read without validation. Used only to choose a validator.</summary>
+    private static string? UnverifiedIssuer(string authorization)
+    {
+        const string prefix = "Bearer ";
+        if (!authorization.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return null;
+        var token = authorization[prefix.Length..].Trim();
+        var handler = new JsonWebTokenHandler();
+        if (!handler.CanReadToken(token)) return null;
+        try { return handler.ReadJsonWebToken(token).Issuer; }
+        catch (ArgumentException) { return null; }
     }
 
     private static bool HasScope(AuthorizationHandlerContext context, string requiredScope) =>

@@ -2786,7 +2786,8 @@
         "required": [
           "identityProvider",
           "methods",
-          "multiFactor"
+          "multiFactor",
+          "accountId"
         ],
         "type": "object",
         "properties": {
@@ -2803,6 +2804,12 @@
             "type": [
               "null",
               "boolean"
+            ]
+          },
+          "accountId": {
+            "type": [
+              "null",
+              "string"
             ]
           }
         }

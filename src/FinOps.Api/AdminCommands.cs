@@ -13,6 +13,7 @@ internal static class AdminCommands
     internal const string Migrate = "migrate";
     internal const string GrantAppAccess = "grant-app-access";
     internal const string ProvisionUser = "provision-user";
+    internal const string SeedDemoExpenses = "seed-demo-expenses";
 
     /// <summary>
     /// Runs a command if the arguments name one; returns its exit code, or null to start the web host. Commands get a
@@ -20,20 +21,22 @@ internal static class AdminCommands
     /// </summary>
     internal static async Task<int?> TryRunAsync(string[] args)
     {
-        var command = args.FirstOrDefault(a => a is SeedDemoData or Migrate or GrantAppAccess or ProvisionUser);
+        var command = args.FirstOrDefault(a => a is SeedDemoData or Migrate or GrantAppAccess or ProvisionUser or SeedDemoExpenses);
         if (command is null) return null;
 
         var builder = WebApplication.CreateSlimBuilder(args);
         // Synthetic demo identities exist only in Development; refuse before touching any database.
-        if (command == SeedDemoData && !builder.Environment.IsDevelopment())
+        if (command is SeedDemoData or SeedDemoExpenses && !builder.Environment.IsDevelopment())
         {
-            Console.Error.WriteLine("seed-demo-data is available only when ASPNETCORE_ENVIRONMENT=Development.");
+            Console.Error.WriteLine($"{command} is available only when ASPNETCORE_ENVIRONMENT=Development.");
             return 1;
         }
 
         // Validate before touching the database.
         ProvisionRequest? provision = null;
         if (command == ProvisionUser && (provision = ProvisionRequest.Parse(args)) is null) return ProvisionUsage();
+        SeedExpensesRequest? seedExpenses = null;
+        if (command == SeedDemoExpenses && (seedExpenses = SeedExpensesRequest.Parse(args)) is null) return SeedExpensesUsage();
 
         builder.Services.AddInfrastructure();
         await using var app = builder.Build();
@@ -44,6 +47,23 @@ internal static class AdminCommands
             case SeedDemoData:
                 Console.WriteLine($"Demo data seeded: {await DemoDataSeeder.SeedAsync(db)} row(s) inserted.");
                 return 0;
+
+            // seed-demo-expenses [--months <1-11>] [--for-user <object id> [--per-month <1-20>]]: Development-only history.
+            case SeedDemoExpenses:
+                try
+                {
+                    var result = await DemoExpenseGenerator.GenerateAsync(db, seedExpenses!.Months, seedExpenses.ForUser,
+                        extraPerMonth: seedExpenses.PerMonth);
+                    var statuses = string.Join(", ", result.ByStatus.Where(s => s.Value > 0).Select(s => $"{s.Value} {s.Key}"));
+                    Console.WriteLine($"Demo expenses: {result.Expenses} inserted ({(statuses == "" ? "none" : statuses)}), "
+                        + $"{result.AlreadyPresent} already present; {result.Notifications} notification(s), {result.Budgets} budget(s) added or resized.");
+                    return 0;
+                }
+                catch (InvalidOperationException error)
+                {
+                    Console.Error.WriteLine(error.Message);
+                    return 2;
+                }
 
             // Used by the deploy workflow with the deploying identity (Entra admin of the SQL server).
             case Migrate:
@@ -113,6 +133,48 @@ internal static class AdminCommands
             var (name, email, role) = (Value("--name"), Value("--email"), Value("--role"));
             if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(role)) return null;
             return new ProvisionRequest(objectId, name, email, role, Value("--department"));
+        }
+    }
+
+    private static int SeedExpensesUsage()
+    {
+        Console.Error.WriteLine("""
+            Usage: seed-demo-expenses [--months <1-11>] [--for-user <object ID> [--per-month <1-20>]]
+              --months    months of history, including this one (default 6)
+              --for-user  also create expenses for this provisioned user, in their department
+              --per-month expenses per month for that user (default 3); raising it on a rerun adds the difference
+            """);
+        return 2;
+    }
+
+    /// <summary>The arguments of <c>seed-demo-expenses</c>; null when a value is invalid.</summary>
+    internal sealed record SeedExpensesRequest(int Months, Guid? ForUser, int PerMonth)
+    {
+        internal static SeedExpensesRequest? Parse(string[] args)
+        {
+            string? Value(string name)
+            {
+                var index = Array.IndexOf(args, name);
+                if (index < 0) return null;
+                return index + 1 < args.Length && !args[index + 1].StartsWith("--", StringComparison.Ordinal) ? args[index + 1] : "";
+            }
+
+            var months = 6;
+            if (Value("--months") is { } m && (!int.TryParse(m, out months) || months is < 1 or > 11)) return null;
+            Guid? forUser = null;
+            if (Value("--for-user") is { } u)
+            {
+                if (!Guid.TryParse(u, out var id) || id == Guid.Empty) return null;
+                forUser = id;
+            }
+            var perMonth = DemoExpenseGenerator.DefaultExtraPerMonth;
+            if (Value("--per-month") is { } p)
+            {
+                // Only meaningful for the --for-user account.
+                if (forUser is null || !int.TryParse(p, out perMonth)
+                    || perMonth is < 1 or > DemoExpenseGenerator.MaximumExtraPerMonth) return null;
+            }
+            return new SeedExpensesRequest(months, forUser, perMonth);
         }
     }
 

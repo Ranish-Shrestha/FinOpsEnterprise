@@ -16,7 +16,7 @@ Source: [main.ts](../../src/finops-web/src/main.ts), [app.config.ts](../../src/f
 | `/mfa` | Auth | none | MFA is enforced by Entra Conditional Access; link to Microsoft security info |
 | `/access-denied` | Auth | none | Signed in, but no active FinOps profile (`/api/me` 403); shows the Object ID to send to an administrator |
 | `/signed-out` | Auth | none | Confirmation, and *Sign in again* |
-| `/dashboard` | Shell | signed in | System overview and departments |
+| `/dashboard` | Shell | signed in | The user's work by role: counts, approvals waiting, recent expenses, this month's budget, unread updates; system status on one line |
 | `/expenses`, `/expenses/:id` | Shell | signed in | Expenses. The tab is `?view=mine\|queue\|toPost\|all`; `:id` opens the detail pane |
 | `/budgets` | Shell | `budgets.read.department` or `.all` | Budget vs. actual |
 | `/reports` | Shell | `reports.read.department`, `.all` or `audit.read` | Reports |
@@ -78,17 +78,17 @@ The Entra redirect still returns to the site root (`/`), so the app registration
 
 What the caller sees before and after access is known:
 
-| Situation | System overview cards | Rest of the page |
-| --- | --- | --- |
-| API or SQL Server down | *Unavailable* or *Needs setup* | "We couldn't load the departments", with setup hints |
-| Signed in, but no application profile, or the profile is inactive (`/api/me` is 403) | Identity: *Sign in*, "No application access" | Expenses says "Sign in with an active account to see expenses"; the other feature sections stay hidden |
-| Signed in and provisioned | Identity: *Authorized*, with the user's roles | Sections allowed by their permissions (section 2) |
+| Situation | What the user sees |
+| --- | --- |
+| API or SQL Server down | Dashboard panels say they couldn't load; the status line shows *API unavailable* or *Database not ready* |
+| Signed in, but no application profile, or the profile is inactive (`/api/me` is 403) | `/access-denied`, with the account's Object ID to provision |
+| Signed in and provisioned | The dashboard tiles and panels their permissions allow (section 2); each panel loads separately, so one failure doesn't blank the page |
 
 ## 2. Workspace pages and what controls each section
 
 ```mermaid
 flowchart TD
-  Page["Shell layout<br/>(sidebar, top bar, user menu)"] --> Overview["/dashboard<br/>API, database, identity cards,<br/>departments (server-filtered)"]
+  Page["Shell layout<br/>(sidebar, top bar, user menu)"] --> Overview["/dashboard<br/>my expenses, approvals waiting,<br/>budget this month, unread updates"]
   Page --> Activity["/notifications<br/>any provisioned user"]
   Page --> Expenses["/expenses<br/>any provisioned user"]
   Page --> Budgets["/budgets<br/>Budget vs. actual"]

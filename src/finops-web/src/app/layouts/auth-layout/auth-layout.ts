@@ -12,7 +12,7 @@ import { RouterLink, RouterOutlet } from '@angular/router';
         <span>FinOps<span class="brand-subtitle">ENTERPRISE</span></span>
       </a>
       <main id="main" class="auth-card"><router-outlet /></main>
-      <p class="auth-footer">Accounts are managed in Microsoft Entra ID. This app never stores your password.</p>
+      <p class="auth-footer">Sign-in is handled by Microsoft or Google. This app never stores your password.</p>
     </div>
   `,
   styles: `

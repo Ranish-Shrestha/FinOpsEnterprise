@@ -11,7 +11,7 @@
         <a class="nav-link" [routerLink]="item.path" routerLinkActive="nav-current" ariaCurrentWhenActive="page">{{ item.label }}</a>
       }
     </nav>
-    <div class="sidebar-note"><span class="dot"></span> {{ mockMode ? 'Local development' : 'Signed in with Microsoft' }}<span>{{ mockMode ? 'Synthetic data only' : 'Access is checked by the API' }}</span></div>
+    <div class="sidebar-note"><span class="dot"></span> {{ signedInWith() }}<span>{{ accessSummary() }}</span></div>
   </aside>
   <div class="content">
     <header class="topbar">

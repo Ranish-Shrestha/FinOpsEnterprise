@@ -94,9 +94,10 @@ test('an expense goes from employee to manager to finance, and the worker notifi
 
 test('a manager sees only their own department, in the UI and at the API', async ({ page, request }) => {
   await signInAs(page, persona.manager);
-  const departments = page.getByRole('region', { name: 'Sample departments' }).getByRole('listitem');
-  await expect(departments).toHaveCount(1);
+  // The dashboard greeting lists the departments the API returned for this user.
+  const departments = page.locator('.intro-text');
   await expect(departments).toContainText('Demo Finance');
+  await expect(departments).not.toContainText('Demo Engineering');
 
   // The UI hides Engineering expenses; the API must refuse them too, and indistinguishably from "not found".
   const own = await request.get('/api/expenses?mine=true', { headers: { 'X-Development-User': persona.employee.oid } });

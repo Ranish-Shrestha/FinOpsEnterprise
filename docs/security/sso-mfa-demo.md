@@ -4,19 +4,68 @@ How to show real single sign-on and multi-factor authentication from the local U
 
 | Piece | Cost |
 | --- | --- |
-| Entra tenant, app registrations, sign-in | Free (Entra ID Free) |
+| Direct Google sign-in (section 0): Google Cloud OAuth client, 2-Step Verification on your Gmail | Free, no card |
+| Entra tenant, app registrations, sign-in | Free (Entra ID Free); getting a tenant may need the Azure free account sign-up, which asks for a card |
 | MFA through security defaults or per-user MFA, with the Microsoft Authenticator app | Free |
 | Google federation and Gmail guest users | Free (guests are billed by monthly active users, with a large free allowance) |
 | Google Cloud OAuth client | Free |
 | Conditional Access | **Paid (Entra ID P1). Not used here** |
 
-Mock mode can't show any of this: it skips the identity provider. This guide switches the local app to **Entra mode**. To switch back afterwards, see the [last section](#back-to-mock-mode).
+Mock mode can't show any of this: it skips the identity provider. This guide switches the local app to real sign-in: **Google only** (section 0, the quickest), **Entra** (sections 1–3), or both. To switch back afterwards, see the [last section](#back-to-mock-mode).
 
 What you'll demonstrate:
 
 1. **Microsoft SSO + MFA.** A member user signs in with Microsoft and approves an Authenticator prompt. The dashboard *Sign-in* card says **MFA verified**.
 2. **Google SSO.** A Gmail user, invited as a guest, signs in with Google. The card names **Google** as the identity provider.
 3. **Authorization still comes from the app.** A new account lands on `/access-denied`, which shows its object ID. Once you provision it, it sees exactly what its role allows.
+
+## 0. Quickest: direct Google sign-in (no Entra tenant)
+
+Needs only a Gmail account. The app talks to Google directly ([ADR 0009](../decisions/0009-google-sign-in.md)). You can skip sections 1–3, and add Entra later: both buttons then appear.
+
+1. **Create a Google OAuth client** at https://console.cloud.google.com:
+   - Create a project, for example `finops-demo`.
+   - Open **Google Auth Platform**, or *APIs & Services → OAuth consent screen* in the older layout.
+     - Choose the **External** audience and fill in an app name and your email.
+     - Leave it in **Testing**, and add your Gmail under **Test users**.
+   - Go to **Clients → Create client → Web application** and set:
+     - **Authorized JavaScript origins:** `http://127.0.0.1:4200`
+     - **Authorized redirect URIs:** `http://127.0.0.1:4200/` (with the trailing slash)
+   - Copy the **client ID** (`….apps.googleusercontent.com`). The app doesn't use the client secret, so don't copy it anywhere.
+   - If Google refuses the `127.0.0.1` address, use `http://localhost:4200` and `http://localhost:4200/` instead, and open the app at http://localhost:4200.
+2. **Configure the API.** From the repository root, set these, then restart the API:
+
+   ```powershell
+   dotnet user-secrets set "Security:GoogleClientId" "<client-id>" --project src/FinOps.Api
+   dotnet user-secrets set "Security:UseDevelopmentMockAuthentication" "false" --project src/FinOps.Api
+   ```
+
+3. **Configure the UI.** Put this in `src/finops-web/public/config.json`, then reload the page:
+
+   ```json
+   { "apiBaseUrl": "", "mockMode": false, "tenantId": "", "spaClientId": "", "apiScope": "",
+     "googleClientId": "<client-id>" }
+   ```
+
+   Don't commit this file.
+4. **Turn on MFA for your Gmail** (free): go to https://myaccount.google.com/security → **2-Step Verification**, and add the Google prompt on your phone or an authenticator app.
+5. **Sign in.**
+   - Open a **private window** at http://127.0.0.1:4200 and click **Sign in with Google**.
+   - Pick the account and enter your password. On a new or private browser, Google usually asks for the 2-Step prompt here too.
+   - You land on **You don't have access**, which shows the account's **Object ID**: an ID the app derives from your Google account.
+6. **Provision the account** with that Object ID. Run this from the repository root:
+
+   ```powershell
+   dotnet run --project src/FinOps.Api -- provision-user --object-id <object-id> `
+     --name "Demo Manager" --email <your-gmail> --role Manager --department "Demo Engineering"
+   ```
+
+7. **Click *Try again*.** The dashboard opens, and the **Sign-in** card shows *Google (direct sign-in)*.
+   - **MFA isn't confirmed by the app.** Google ID tokens don't say whether 2-Step Verification ran, so the card shows *Not reported*.
+   - The demo's evidence is the 2-Step prompt on your phone, and the sign-in in https://myaccount.google.com → *Security* → *Recent security activity*.
+   - If the card must say **MFA verified**, use Microsoft (section 2) or Google through Entra (section 3).
+
+**Session length:** after about an hour the Google token expires and the app asks you to sign in again. Google usually signs you straight back in. Sign out clears this app's token, but you stay signed in to Google in that browser.
 
 ## 1. Tenant and app registrations (once)
 
@@ -104,7 +153,11 @@ Google blocks sign-in inside embedded web views. This app uses the normal browse
 | Google `redirect_uri_mismatch` | Add all three Microsoft redirect URIs in the Google OAuth client |
 | Google "Access blocked" or "app not verified" | Add the Gmail address as a test user on the OAuth consent screen (Testing mode) |
 | No MFA prompt | Security defaults prompt only when Entra decides to. Use per-user MFA for a predictable demo, and sign in from a private window |
-| Card says *Not reported* | The token had no `amr` claim. Check the sign-in logs for the methods actually used |
+| Card says *Not reported* | The token had no `amr` claim. That's always the case for direct Google sign-in. For Entra, check the sign-in logs for the methods actually used |
+| Google `redirect_uri_mismatch` on direct sign-in | The client's redirect URI must be exactly the address you opened plus `/`, for example `http://127.0.0.1:4200/`. `localhost` and `127.0.0.1` are different addresses |
+| No *Sign in with Google* button | `config.json` needs `mockMode: false` and `googleClientId`. Reload the page after editing it |
+| Google sign-in returns, then every call is 401 | The API's `Security:GoogleClientId` must equal the UI's `googleClientId`. Restart the API after setting it |
+| Startup error *Configure Security:TenantId…* | Mock authentication is off, but neither Entra nor Google is configured in user secrets |
 
 ## Back to mock mode
 

@@ -38,6 +38,24 @@ describe('runtime config', () => {
     expect(authConfig.mockMode).toBe(true);
   });
 
+  it('allows Google sign-in without Entra, and both together', () => {
+    const google = { mockMode: false, googleClientId: '123-abc.apps.googleusercontent.com' };
+    applyRuntimeConfig({ ...google, tenantId: '', spaClientId: '', apiScope: '' });
+    expect(authConfig.googleClientId).toBe(google.googleClientId);
+    expect(authConfig.entraEnabled).toBe(false);
+
+    applyRuntimeConfig({ ...entra, ...google });
+    expect(authConfig.entraEnabled).toBe(true);
+    expect(authConfig.googleClientId).toBe(google.googleClientId);
+  });
+
+  it('refuses a malformed Google client ID, and half an Entra configuration next to Google', () => {
+    expect(() => applyRuntimeConfig({ mockMode: false, googleClientId: 'https://evil.example' })).toThrow('googleusercontent');
+    expect(() => applyRuntimeConfig({ mockMode: false, googleClientId: '1-a.apps.googleusercontent.com', tenantId: 'x' }))
+      .toThrow('GUIDs');
+    expect(authConfig.mockMode).toBe(true);
+  });
+
   it('keeps local defaults when config.json is absent, and fails loudly when it is broken', async () => {
     await loadRuntimeConfig(vi.fn().mockResolvedValue(new Response(null, { status: 404 })));
     expect(authConfig.mockMode).toBe(true);

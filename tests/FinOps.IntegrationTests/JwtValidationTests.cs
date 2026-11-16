@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using FinOps.Api;
+using FinOps.Api.Security;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,6 +25,8 @@ public sealed class JwtValidationTests
 
     private static readonly RsaSecurityKey TrustedKey = CreateKey("trusted-key");
     private static readonly RsaSecurityKey UntrustedKey = CreateKey("untrusted-key");
+    private static readonly RsaSecurityKey GoogleKey = CreateKey("google-key");
+    private const string GoogleClientId = "finops-tests.apps.googleusercontent.com";
 
     [Fact]
     public async Task Valid_token_with_the_api_scope_is_accepted()
@@ -132,6 +135,60 @@ public sealed class JwtValidationTests
         Assert.Equal(multiFactor, details.MultiFactor);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Google_id_token_maps_to_a_stable_application_account(bool entraAlsoConfigured)
+    {
+        await using var factory = CreateGoogleFactory(entraAlsoConfigured);
+        using var client = Client(factory, GoogleToken("108123456789012345678"));
+
+        var details = await client.GetFromJsonAsync<SignInDetailsDto>("/api/me/sign-in");
+        Assert.NotNull(details);
+        Assert.Equal("Google (direct sign-in)", details.IdentityProvider);
+        Assert.Null(details.MultiFactor); // Google ID tokens carry no amr
+        Assert.Equal(GoogleAccounts.ObjectId("108123456789012345678").ToString(), details.AccountId);
+
+        // Authenticated, but not provisioned: the application, not Google, decides access.
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/me")).StatusCode);
+        Assert.Equal(1, factory.UserAccess.Lookups);
+    }
+
+    [Fact]
+    public async Task Entra_tokens_still_work_when_google_is_also_configured()
+    {
+        await using var factory = CreateGoogleFactory(entraAlsoConfigured: true);
+        using var client = Client(factory, Token());
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/departments")).StatusCode);
+    }
+
+    public static TheoryData<string, string> RejectedGoogleTokens() => new()
+    {
+        { "issued to another Google client", GoogleToken("1", audience: "someone-else.apps.googleusercontent.com") },
+        { "signed by an untrusted key", GoogleToken("1", key: UntrustedKey) },
+        { "Google issuer but signed by the Entra key", GoogleToken("1", key: TrustedKey) },
+        { "Entra issuer but signed by the Google key", Token(key: GoogleKey, useDefaultKey: false) },
+        { "expired", GoogleToken("1", expires: DateTime.UtcNow.AddMinutes(-5)) },
+    };
+
+    [Theory]
+    [MemberData(nameof(RejectedGoogleTokens))]
+    public async Task Invalid_google_tokens_are_401(string reason, string token)
+    {
+        await using var factory = CreateGoogleFactory(entraAlsoConfigured: true);
+        using var client = Client(factory, token);
+        var status = (await client.GetAsync("/api/me/sign-in")).StatusCode;
+        Assert.True(status == HttpStatusCode.Unauthorized, $"{reason}: expected 401, got {(int)status}");
+    }
+
+    [Fact]
+    public void Google_account_ids_are_deterministic_and_distinct()
+    {
+        Assert.Equal(GoogleAccounts.ObjectId("42"), GoogleAccounts.ObjectId("42"));
+        Assert.NotEqual(GoogleAccounts.ObjectId("42"), GoogleAccounts.ObjectId("43"));
+        Assert.Equal('8', GoogleAccounts.ObjectId("42").ToString()[14]); // RFC 9562 version 8
+    }
+
     [Fact]
     public async Task Development_user_header_is_ignored_in_production()
     {
@@ -155,6 +212,54 @@ public sealed class JwtValidationTests
             metadata.SigningKeys.Add(TrustedKey);
             options.Configuration = metadata;
         }));
+
+    private static ApiFactory CreateGoogleFactory(bool entraAlsoConfigured)
+    {
+        var settings = new Dictionary<string, string?> { ["Security:GoogleClientId"] = GoogleClientId };
+        if (entraAlsoConfigured)
+        {
+            settings["Security:TenantId"] = TenantId;
+            settings["Security:Audience"] = Audience;
+        }
+
+        return new("Production", settings: settings, testServices: services =>
+        {
+            // Stand-ins for the Entra and https://accounts.google.com/.well-known/openid-configuration metadata.
+            services.Configure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
+            {
+                var metadata = new OpenIdConnectConfiguration { Issuer = Issuer };
+                metadata.SigningKeys.Add(TrustedKey);
+                options.Configuration = metadata;
+            });
+            services.Configure<JwtBearerOptions>("Google", options =>
+            {
+                var metadata = new OpenIdConnectConfiguration { Issuer = GoogleAccounts.Issuer };
+                metadata.SigningKeys.Add(GoogleKey);
+                options.Configuration = metadata;
+            });
+        });
+    }
+
+    /// <summary>A Google ID token: no oid and no scope, only the Google account's sub.</summary>
+    private static string GoogleToken(string subject, string audience = GoogleClientId, RsaSecurityKey? key = null,
+        DateTime? expires = null)
+    {
+        var expiry = expires ?? DateTime.UtcNow.AddHours(1);
+        var descriptor = new SecurityTokenDescriptor
+        {
+            Issuer = GoogleAccounts.Issuer,
+            Audience = audience,
+            IssuedAt = expiry.AddHours(-1),
+            NotBefore = expiry.AddHours(-1),
+            Expires = expiry,
+            Claims = new Dictionary<string, object>
+            {
+                ["sub"] = subject, ["email"] = "demo@gmail.example", ["email_verified"] = true, ["nonce"] = "n",
+            },
+            SigningCredentials = new SigningCredentials(key ?? GoogleKey, SecurityAlgorithms.RsaSha256),
+        };
+        return new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false }.CreateToken(descriptor);
+    }
 
     private static HttpClient Client(ApiFactory factory, string token)
     {

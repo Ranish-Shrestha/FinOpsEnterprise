@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../auth.service';
 import { SessionStore } from '../../core/session.store';
@@ -12,7 +12,7 @@ import { SessionStore } from '../../core/session.store';
     <h1 class="auth-title">You don't have access</h1>
     @if (auth.authenticated()) {
       <p class="auth-lead">You're signed in, but your account isn't set up in FinOps Enterprise, or it's no longer active.</p>
-      @if (objectId; as id) {
+      @if (objectId(); as id) {
         <p class="auth-note">Send this Object ID to your FinOps administrator:<br><code>{{ id }}</code></p>
       }
       <div class="auth-actions">
@@ -29,7 +29,8 @@ export class AccessDenied {
   private readonly router = inject(Router);
   private readonly session = inject(SessionStore);
   readonly auth = inject(AuthService);
-  readonly objectId = this.auth.accountObjectId();
+  /** From the API, which knows Google accounts' IDs too; else read from the Entra token. */
+  readonly objectId = computed(() => this.session.state()?.signIn?.accountId ?? this.auth.accountObjectId());
 
   async retry(): Promise<void> {
     await this.session.refresh();
@@ -37,8 +38,8 @@ export class AccessDenied {
   }
 
   signOut(): void {
-    this.auth.signOut();
+    const leftApp = this.auth.signOut();
     this.session.clear();
-    if (this.auth.mockMode) void this.router.navigateByUrl('/signed-out');
+    if (!leftApp) void this.router.navigateByUrl('/signed-out');
   }
 }

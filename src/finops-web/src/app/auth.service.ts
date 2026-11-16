@@ -12,7 +12,12 @@ const keys = {
   mockObjectId: 'finops.mock_object_id',
   mockSignedIn: 'finops.mock_signed_in',
   returnUrl: 'finops.return_url',
+  oidcNonce: 'finops.oidc_nonce',
+  provider: 'finops.provider',
 } as const;
+
+/** Who signed the user in. Microsoft is Entra (authorization code + PKCE); Google is a direct OIDC sign-in. */
+export type SignInProvider = 'microsoft' | 'google';
 
 const defaultReturnUrl = '/dashboard';
 
@@ -27,12 +32,16 @@ export function safeReturnUrl(value: string | null | undefined): string | null {
 
 /**
  * Browser sign-in. This is convenience only: the API validates every token and authorizes every request.
- * Mock mode sends a Development-only header; Entra mode uses authorization code + PKCE.
+ * Mock mode sends a Development-only header; Entra uses authorization code + PKCE; Google (optional) returns an ID
+ * token directly to the browser, checked against a one-time state and nonce, and the API validates it.
  * See docs/decisions/0003-hardening-and-demo-data.md for why this is not yet MSAL.
  */
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   readonly mockMode = authConfig.mockMode;
+  /** Which real sign-in buttons the login page offers. */
+  readonly entraEnabled = !authConfig.mockMode && authConfig.entraEnabled;
+  readonly googleEnabled = !authConfig.mockMode && !!authConfig.googleClientId;
   readonly personas = authConfig.mockPersonas;
   readonly persona = signal<string>(
     sessionStorage.getItem(keys.mockObjectId) ?? authConfig.mockPersonas[0].objectId);
@@ -46,6 +55,7 @@ export class AuthService {
    */
   async completeRedirect(): Promise<boolean> {
     if (authConfig.mockMode) return false;
+    if (/^#(.*&)?(id_token|error)=/.test(location.hash)) return this.completeGoogleRedirect();
     const params = new URLSearchParams(location.search);
     const code = params.get('code');
     if (!code) return false;
@@ -66,6 +76,7 @@ export class AuthService {
     const token = await response.json() as TokenResponse;
     sessionStorage.setItem(keys.accessToken, token.access_token);
     sessionStorage.setItem(keys.accessTokenExpiry, String(Date.now() + token.expires_in * 1000));
+    sessionStorage.setItem(keys.provider, 'microsoft');
     this.authenticated.set(true);
     this.signInError.set(null);
     return true;
@@ -78,7 +89,7 @@ export class AuthService {
     return saved ?? defaultReturnUrl;
   }
 
-  async signIn(returnUrl?: string | null): Promise<void> {
+  async signIn(returnUrl?: string | null, provider: SignInProvider = 'microsoft'): Promise<void> {
     const target = safeReturnUrl(returnUrl);
     if (target) sessionStorage.setItem(keys.returnUrl, target);
     else sessionStorage.removeItem(keys.returnUrl);
@@ -86,6 +97,10 @@ export class AuthService {
     if (authConfig.mockMode) {
       sessionStorage.setItem(keys.mockSignedIn, 'true');
       this.authenticated.set(true);
+      return;
+    }
+    if (provider === 'google') {
+      this.startGoogleSignIn();
       return;
     }
     const verifier = this.base64Url(crypto.getRandomValues(new Uint8Array(48)));
@@ -99,13 +114,18 @@ export class AuthService {
     this.navigate(`https://login.microsoftonline.com/${authConfig.tenantId}/oauth2/v2.0/authorize?${query}`);
   }
 
-  /** Clears this app's session. In Entra mode it also leaves for the Entra logout page; the caller routes otherwise. */
-  signOut(): void {
+  /**
+   * Clears this app's session. After an Entra sign-in it also leaves for the Entra logout page and returns true;
+   * otherwise (mock, Google) it returns false and the caller routes. Google has no sign-out for other sites: the
+   * browser stays signed in to Google, but this app's token is gone.
+   */
+  signOut(): boolean {
+    const provider = sessionStorage.getItem(keys.provider);
     this.clearSession();
-    if (!authConfig.mockMode) {
-      this.navigate(`https://login.microsoftonline.com/${authConfig.tenantId}/oauth2/v2.0/logout`
-        + `?post_logout_redirect_uri=${encodeURIComponent(authConfig.redirectUri)}`);
-    }
+    if (authConfig.mockMode || provider === 'google') return false;
+    this.navigate(`https://login.microsoftonline.com/${authConfig.tenantId}/oauth2/v2.0/logout`
+      + `?post_logout_redirect_uri=${encodeURIComponent(authConfig.redirectUri)}`);
+    return true;
   }
 
   /** Development only: switch the synthetic persona the mock header represents. */
@@ -129,16 +149,8 @@ export class AuthService {
    */
   accountObjectId(): string | null {
     if (authConfig.mockMode) return this.authenticated() ? this.persona() : null;
-    const token = sessionStorage.getItem(keys.accessToken);
-    try {
-      const payload = token?.split('.')[1];
-      if (!payload) return null;
-      const json = atob(payload.replaceAll('-', '+').replaceAll('_', '/'));
-      const oid = (JSON.parse(json) as { oid?: unknown }).oid;
-      return typeof oid === 'string' ? oid : null;
-    } catch {
-      return null;
-    }
+    const oid = this.payload(sessionStorage.getItem(keys.accessToken))?.['oid'];
+    return typeof oid === 'string' ? oid : null;
   }
 
   authorizationHeaders(): Record<string, string> {
@@ -150,6 +162,57 @@ export class AuthService {
   /** Leaves the app for Entra. A method so tests can observe the destination instead of navigating. */
   protected navigate(url: string): void {
     location.assign(url);
+  }
+
+  /** Google's OIDC endpoint, implicit `id_token` response: a public client gets an ID token without a secret. */
+  private startGoogleSignIn(): void {
+    const state = crypto.randomUUID();
+    const nonce = this.base64Url(crypto.getRandomValues(new Uint8Array(32)));
+    sessionStorage.setItem(keys.oauthState, state);
+    sessionStorage.setItem(keys.oidcNonce, nonce);
+    const query = new URLSearchParams({ client_id: authConfig.googleClientId, response_type: 'id_token',
+      redirect_uri: authConfig.redirectUri, scope: 'openid email profile', state, nonce, prompt: 'select_account' });
+    this.navigate(`https://accounts.google.com/o/oauth2/v2/auth?${query}`);
+  }
+
+  /**
+   * Finishes a Google redirect (`#id_token=…&state=…`). The state and nonce must match the ones saved when sign-in
+   * started, so a token injected into the URL is refused. The signature is not checked here: the API verifies it.
+   */
+  private completeGoogleRedirect(): boolean {
+    const params = new URLSearchParams(location.hash.slice(1));
+    const state = sessionStorage.getItem(keys.oauthState);
+    const nonce = sessionStorage.getItem(keys.oidcNonce);
+    sessionStorage.removeItem(keys.oauthState);
+    sessionStorage.removeItem(keys.oidcNonce);
+    history.replaceState({}, document.title, location.pathname);
+    if (!state || params.get('state') !== state) throw new Error('Invalid OAuth state.');
+    const error = params.get('error');
+    if (error) throw new Error(error === 'access_denied' ? 'Google sign-in was cancelled.' : 'Google sign-in failed.');
+    const idToken = params.get('id_token');
+    const claims = this.payload(idToken);
+    if (!idToken || !nonce || claims?.['nonce'] !== nonce) throw new Error('Invalid Google ID token.');
+    const exp = claims['exp'];
+    if (typeof exp !== 'number') throw new Error('Invalid Google ID token.');
+    sessionStorage.setItem(keys.accessToken, idToken);
+    sessionStorage.setItem(keys.accessTokenExpiry, String(exp * 1000));
+    sessionStorage.setItem(keys.provider, 'google');
+    this.authenticated.set(true);
+    this.signInError.set(null);
+    return true;
+  }
+
+  /** A JWT's payload, unverified (display and nonce checks only), or null. */
+  private payload(token: string | null | undefined): Record<string, unknown> | null {
+    try {
+      const part = token?.split('.')[1];
+      if (!part) return null;
+      const json = atob(part.replaceAll('-', '+').replaceAll('_', '/'));
+      const value: unknown = JSON.parse(json);
+      return typeof value === 'object' && value !== null ? value as Record<string, unknown> : null;
+    } catch {
+      return null;
+    }
   }
 
   private hasSession(): boolean {

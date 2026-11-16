@@ -54,7 +54,9 @@ internal sealed class ApiFactory(
             ["ConnectionStrings:FinOps"] = "Server=127.0.0.1;Database=FinOpsHttpTests;Integrated Security=True;Connect Timeout=1",
             ["Security:UseDevelopmentMockAuthentication"] = mock,
             ["Security:TenantId"] = "00000000-0000-0000-0000-000000000000",
-            ["Security:Audience"] = "api://finops-tests"
+            ["Security:Audience"] = "api://finops-tests",
+            // Pinned so a developer's user secrets (loaded in Development) can't add Google sign-in to the tests.
+            ["Security:GoogleClientId"] = "",
         };
         foreach (var (key, value) in settings ?? new Dictionary<string, string?>()) configuration[key] = value;
 

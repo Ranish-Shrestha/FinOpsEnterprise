@@ -46,6 +46,8 @@ export class Expenses {
   readonly viewParam = input<string | undefined>(undefined, { alias: 'view' });
   /** `/expenses/:id` route parameter: which expense to open. */
   readonly id = input<string | undefined>(undefined);
+  /** `?new=1` (from the dashboard): open the create form. Opening it rewrites the URL, which drops the flag. */
+  readonly newParam = input<string | undefined>(undefined, { alias: 'new' });
 
   readonly categories = categories;
   readonly view = signal<View>('mine');
@@ -98,6 +100,7 @@ export class Expenses {
         this.clearDetail();
         this.formMode.set('closed');
         if (user) this.load(); else { this.items.set([]); this.total.set(0); }
+        if (user && this.newParam() !== undefined && this.canCreate()) this.startCreate();
       });
     });
 

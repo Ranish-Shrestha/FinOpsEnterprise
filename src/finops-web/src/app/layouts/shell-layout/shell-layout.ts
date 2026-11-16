@@ -30,6 +30,24 @@ export class ShellLayout {
   readonly session = inject(SessionStore);
   readonly mockMode = this.auth.mockMode;
 
+  /** Who actually signed the user in, from the API's reading of the validated token. */
+  readonly signedInWith = computed(() => {
+    if (this.mockMode) return 'Local development';
+    const provider = this.session.state()?.signIn?.identityProvider ?? '';
+    if (provider.startsWith('Google')) return 'Signed in with Google';
+    if (provider.startsWith('Microsoft')) return 'Signed in with Microsoft';
+    return provider ? `Signed in with ${provider}` : 'Signed in';
+  });
+
+  /** Role and MFA state, e.g. "Manager · MFA verified". */
+  readonly accessSummary = computed(() => {
+    if (this.mockMode) return 'Synthetic data only';
+    const roles = this.session.user()?.roles.join(', ') ?? '';
+    const mfa = this.session.state()?.signIn?.multiFactor;
+    const mfaText = mfa === true ? 'MFA verified' : mfa === false ? 'No MFA in token' : '';
+    return [roles, mfaText].filter(Boolean).join(' · ');
+  });
+
   /** Links the caller can use; the same permissions as the route guards. */
   readonly nav = computed(() => {
     this.session.user();
@@ -49,9 +67,9 @@ export class ShellLayout {
   }
 
   signOut(): void {
-    this.auth.signOut();
+    const leftApp = this.auth.signOut();
     this.session.clear();
-    if (this.mockMode) void this.router.navigateByUrl('/signed-out');
+    if (!leftApp) void this.router.navigateByUrl('/signed-out');
   }
 
   focusMain(event: Event): void {

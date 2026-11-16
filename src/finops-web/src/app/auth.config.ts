@@ -12,6 +12,10 @@ export const authConfig = {
   spaClientId: 'YOUR_SPA_CLIENT_ID',
   apiScope: 'api://YOUR_API_CLIENT_ID/FinOps.Access',
   redirectUri: `${window.location.origin}/`,
+  /** Whether "Sign in with Microsoft" is offered (outside mock mode). Set from config.json. */
+  entraEnabled: false,
+  /** Google OAuth client ID for direct "Sign in with Google"; empty hides the button. Set from config.json. */
+  googleClientId: '',
   mockMode: true,
   // Synthetic personas created by `dotnet run --project src/FinOps.Api -- seed-demo-data`.
   // The API trusts the mock header only in Development; these IDs mean nothing anywhere else.

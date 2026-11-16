@@ -5,7 +5,13 @@ import { catchError, forkJoin, map, of, timeout } from 'rxjs';
 export interface Department { id: string; name: string; }
 export interface CurrentUser { displayName: string; email: string; roles: string[]; permissions: string[]; departmentIds: string[]; }
 /** How the caller signed in, from `GET /api/me/sign-in` (the API reads its validated token). */
-export interface SignInDetails { identityProvider: string; methods: string[]; multiFactor: boolean | null; }
+export interface SignInDetails {
+  identityProvider: string;
+  methods: string[];
+  multiFactor: boolean | null;
+  /** The ID an administrator provisions: the Entra object ID, or the app's ID for a Google account. */
+  accountId: string | null;
+}
 export interface FoundationState {
   apiOnline: boolean;
   databaseReady: boolean;

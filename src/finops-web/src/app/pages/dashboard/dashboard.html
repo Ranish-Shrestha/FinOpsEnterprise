@@ -1,37 +1,150 @@
 <section class="intro">
-  <div><p class="eyebrow">FINANCIAL OPERATIONS, CONNECTED</p><h1>A clear starting point.</h1><p class="intro-text">Your local workspace for building reliable financial operations.</p></div>
-  <button type="button" (click)="refresh()" [disabled]="session.loading()">{{ session.loading() ? 'Checking connections...' : 'Refresh status' }}</button>
-</section>
-<section aria-labelledby="status-heading" aria-live="polite" [attr.aria-busy]="session.loading()">
-  <h2 id="status-heading" class="section-heading">System overview</h2>
-  <div class="status-grid">
-    <article class="status-card"><span class="card-label">APPLICATION API</span><p class="status-value" [class.healthy]="state()?.apiOnline">{{ session.loading() ? 'Checking' : state()?.apiOnline ? 'Connected' : 'Unavailable' }}</p><p>ASP.NET Core foundation</p></article>
-    <article class="status-card"><span class="card-label">DATABASE</span><p class="status-value" [class.healthy]="state()?.databaseReady">{{ session.loading() ? 'Checking' : state()?.databaseReady ? 'Ready' : 'Needs setup' }}</p><p>SQL Server &amp; initial schema</p></article>
-    <article class="status-card"><span class="card-label">IDENTITY</span><p class="status-value" [class.healthy]="state()?.user">{{ state()?.user ? 'Authorized' : 'Sign in' }}</p><p>{{ state()?.user?.roles?.join(', ') || 'No application access' }}</p></article>
-    <article class="status-card"><span class="card-label">SIGN-IN</span>
-      @if (state()?.signIn; as signIn) {
-        <p class="status-value" [class.healthy]="signIn.multiFactor">{{ signIn.multiFactor === true ? 'MFA verified' : signIn.multiFactor === false ? 'No MFA in token' : 'Not reported' }}</p>
-        <p>{{ signIn.identityProvider }}@if (signIn.methods.length) { · {{ signIn.methods.join(', ') }} }</p>
-      } @else {
-        <p class="status-value">Unknown</p><p>Sign-in details unavailable</p>
-      }
-    </article>
+  <div>
+    <p class="eyebrow">{{ now | date: 'EEEE, d MMMM' | uppercase }}</p>
+    <h1>{{ greeting }}@if (firstName()) {, {{ firstName() }}}.</h1>
+    <p class="intro-text">
+      {{ session.user()?.roles?.join(', ') }}@if (departmentNames().length) { · {{ departmentNames().join(', ') }} }
+    </p>
+  </div>
+  <div class="intro-actions">
+    <button type="button" class="button secondary" (click)="refresh()" [disabled]="loading() || session.loading()">
+      {{ loading() ? 'Refreshing...' : 'Refresh' }}
+    </button>
+    @if (canCreate()) { <a class="button" routerLink="/expenses" [queryParams]="{ new: 1 }">New expense</a> }
   </div>
 </section>
-<section class="departments" aria-labelledby="departments-heading">
-  <div class="panel-header"><div><p class="eyebrow">ORGANIZATION</p><h2 id="departments-heading">Sample departments</h2></div><span class="small-badge">DEMO DATA</span></div>
-  <p class="panel-description">Server-filtered departments from your active memberships and application permissions.</p>
-  @if (session.loading()) {
-    <p class="empty-state" role="status">Loading sample departments...</p>
-  } @else if (state()?.departments === null || !state()) {
-    <div class="empty-state" role="status"><strong>We couldn't load the departments.</strong><p>Start the API and SQL Server, apply the initial migration, then refresh. Setup instructions are in the project README.</p></div>
-  } @else if (state()?.departments?.length === 0) {
-    <p class="empty-state">No sample departments are available.</p>
-  } @else {
-    <ul class="department-list">
-      @for (department of state()?.departments; track department.id) {
-        <li><span class="department-icon" aria-hidden="true">{{ department.name.charAt(5) }}</span><span>{{ department.name }}</span><span class="reference-label">Reference data</span></li>
-      }
-    </ul>
-  }
+
+<section aria-labelledby="kpi-heading" aria-live="polite" [attr.aria-busy]="loading()">
+  <h2 id="kpi-heading" class="visually-hidden">At a glance</h2>
+  <div class="kpi-grid">
+    <a class="kpi" routerLink="/expenses">
+      <span class="kpi-label">My drafts</span>
+      <span class="kpi-value">{{ data()?.drafts ?? '—' }}</span>
+      <span class="kpi-hint">Not yet submitted</span>
+    </a>
+    <a class="kpi" routerLink="/expenses">
+      <span class="kpi-label">Awaiting approval</span>
+      <span class="kpi-value">{{ data()?.awaitingApproval ?? '—' }}</span>
+      <span class="kpi-hint">My submitted expenses</span>
+    </a>
+    @if (canApprove()) {
+      <a class="kpi" [class.attention]="(data()?.toApprove?.count ?? 0) > 0" routerLink="/expenses" [queryParams]="{ view: 'queue' }">
+        <span class="kpi-label">To approve</span>
+        <span class="kpi-value">{{ data()?.toApprove?.count ?? '—' }}</span>
+        <span class="kpi-hint">Waiting for your decision</span>
+      </a>
+    }
+    @if (canPost()) {
+      <a class="kpi" [class.attention]="(data()?.toPost ?? 0) > 0" routerLink="/expenses" [queryParams]="{ view: 'toPost' }">
+        <span class="kpi-label">Ready to post</span>
+        <span class="kpi-value">{{ data()?.toPost ?? '—' }}</span>
+        <span class="kpi-hint">Approved, not yet posted</span>
+      </a>
+    }
+    <a class="kpi" [class.attention]="(data()?.inbox?.unread ?? 0) > 0" routerLink="/notifications">
+      <span class="kpi-label">Unread notifications</span>
+      <span class="kpi-value">{{ data()?.inbox?.unread ?? '—' }}</span>
+      <span class="kpi-hint">Decisions on your expenses</span>
+    </a>
+  </div>
 </section>
+
+<div class="panels">
+  @if (canApprove()) {
+    <section class="panel" aria-labelledby="queue-heading">
+      <div class="panel-header">
+        <h2 id="queue-heading">Waiting for your approval</h2>
+        <a class="panel-link" routerLink="/expenses" [queryParams]="{ view: 'queue' }">Open queue</a>
+      </div>
+      @if (data()?.toApprove?.items; as items) {
+        @if (items.length) {
+          <ul class="rows">
+            @for (e of items; track e.id) {
+              <li><a [routerLink]="['/expenses', e.id]" [queryParams]="{ view: 'queue' }">
+                <span class="row-main"><strong>{{ e.description }}</strong><small>{{ e.requesterName }} · {{ e.departmentName }} · submitted {{ e.submittedAtUtc | date: 'd MMM' }}</small></span>
+                <span class="row-amount">{{ e.amount | currency: e.currency }}</span>
+              </a></li>
+            }
+          </ul>
+        } @else { <p class="empty">Nothing to approve. You're all caught up.</p> }
+      } @else { <p class="empty">{{ loading() ? 'Loading...' : "Couldn't load the approval queue." }}</p> }
+    </section>
+  }
+
+  <section class="panel" aria-labelledby="recent-heading">
+    <div class="panel-header">
+      <h2 id="recent-heading">My recent expenses</h2>
+      <a class="panel-link" routerLink="/expenses">All my expenses</a>
+    </div>
+    @if (data()?.recent; as items) {
+      @if (items.length) {
+        <ul class="rows">
+          @for (e of items; track e.id) {
+            <li><a [routerLink]="['/expenses', e.id]">
+              <span class="row-main"><strong>{{ e.description }}</strong><small>{{ e.category }} · {{ e.expenseDate | date: 'd MMM y' }}</small></span>
+              <span [class]="statusClass(e.status)">{{ e.status }}</span>
+              <span class="row-amount">{{ e.amount | currency: e.currency }}</span>
+            </a></li>
+          }
+        </ul>
+      } @else { <p class="empty">No expenses yet.@if (canCreate()) { <a routerLink="/expenses" [queryParams]="{ new: 1 }">Create your first one.</a> }</p> }
+    } @else { <p class="empty">{{ loading() ? 'Loading...' : "Couldn't load your expenses." }}</p> }
+  </section>
+
+  @if (canSeeBudgets()) {
+    <section class="panel" aria-labelledby="budget-heading">
+      <div class="panel-header">
+        <h2 id="budget-heading">Budget · {{ monthLabel }}</h2>
+        <a class="panel-link" routerLink="/budgets">Budgets</a>
+      </div>
+      @if (data()?.budget; as rows) {
+        @if (rows.length) {
+          @if (budgetTotals().percent !== null) {
+            <p class="budget-summary"><strong>{{ budgetTotals().spent | currency: 'USD' }}</strong> spent or committed of {{ budgetTotals().budget | currency: 'USD' }}</p>
+          }
+          <ul class="budget-rows">
+            @for (r of rows; track r.departmentId) {
+              <li>
+                <div class="budget-line"><span>{{ r.departmentName }}</span>
+                  <span class="muted">@if (r.utilizationPercent === null) { No budget set } @else { {{ r.utilizationPercent | number: '1.0-0' }}% used }</span></div>
+                <div class="meter" role="meter" aria-valuemin="0" aria-valuemax="100" [attr.aria-label]="r.departmentName + ' budget used'"
+                     [attr.aria-valuenow]="r.utilizationPercent ?? 0">
+                  <span [class]="meterClass(r.utilizationPercent)" [style.width.%]="r.utilizationPercent === null ? 0 : r.utilizationPercent > 100 ? 100 : r.utilizationPercent"></span>
+                </div>
+                <small class="muted">{{ r.posted | currency: 'USD' }} posted · {{ r.committed | currency: 'USD' }} approved · {{ r.pending | currency: 'USD' }} pending@if (r.remaining !== null) { · {{ r.remaining | currency: 'USD' }} left }</small>
+              </li>
+            }
+          </ul>
+        } @else { <p class="empty">No budget data for {{ monthLabel }}.</p> }
+      } @else { <p class="empty">{{ loading() ? 'Loading...' : "Couldn't load budgets." }}</p> }
+    </section>
+  }
+
+  <section class="panel" aria-labelledby="inbox-heading">
+    <div class="panel-header">
+      <h2 id="inbox-heading">Latest updates</h2>
+      <a class="panel-link" routerLink="/notifications">Notifications</a>
+    </div>
+    @if (data()?.inbox; as inbox) {
+      @if (inbox.items.length) {
+        <ul class="rows">
+          @for (n of inbox.items; track n.id) {
+            <li><a [routerLink]="['/expenses', n.expenseId]">
+              <span class="row-main"><strong>{{ n.expenseDescription }}</strong><small>{{ notificationText(n) }} · {{ n.createdAtUtc | date: 'd MMM, HH:mm' }}</small></span>
+              <span class="row-amount">{{ n.amount | currency: n.currency }}</span>
+            </a></li>
+          }
+        </ul>
+      } @else { <p class="empty">No unread updates.</p> }
+    } @else { <p class="empty">{{ loading() ? 'Loading...' : "Couldn't load notifications." }}</p> }
+  </section>
+</div>
+
+<footer class="system-line" aria-label="System status">
+  <span><span class="dot" [class.ok]="state()?.apiOnline"></span>API {{ state()?.apiOnline ? 'online' : 'unavailable' }}</span>
+  <span><span class="dot" [class.ok]="state()?.databaseReady"></span>Database {{ state()?.databaseReady ? 'ready' : 'not ready' }}</span>
+  @if (state()?.signIn; as signIn) {
+    <span><span class="dot" [class.ok]="signIn.multiFactor"></span>{{ signIn.identityProvider }} ·
+      {{ signIn.multiFactor === true ? 'MFA verified' : signIn.multiFactor === false ? 'no MFA in token' : 'MFA not reported' }}</span>
+  }
+</footer>

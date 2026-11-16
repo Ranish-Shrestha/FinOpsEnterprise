@@ -4,7 +4,7 @@ A script for a 6–8 minute recorded demo, or a live run-through for a reviewer.
 
 Prepare before recording:
 
-- **Seed:** run `seed-demo-data`.
+- **Seed:** run `seed-demo-data`, then `seed-demo-expenses` so the dashboard and reports have a few months of history.
 - **Dashboard:** start it with `docker compose --profile observability up -d aspire-dashboard`.
 - **Tabs:** open http://127.0.0.1:4200 (it goes to `/login`: pick a persona and click *Continue*) and http://localhost:18888 in two browser tabs.
 - **Navigation:** each area is its own page in the sidebar (*Overview*, *Expenses*, *Budgets*, *Reports*, *Notifications*, *Outbox*). Switch persona from the top bar; the sidebar shows only the pages that persona may use.
@@ -17,7 +17,7 @@ Prepare before recording:
 
 ## 2. Identity is not authorization (60 s)
 
-1. **Demo Employee:** the *Sample departments* card shows only *Demo Engineering*.
+1. **Demo Employee:** the dashboard greeting lists only *Demo Engineering*, and there's no *To approve* tile.
 2. **Demo Manager:** only *Demo Finance*, because the Operations membership has expired.
    - Point out that the token only says who the caller is.
    - Roles, permissions and dated memberships come from SQL Server.
